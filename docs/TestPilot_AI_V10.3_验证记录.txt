@@ -1,0 +1,1077 @@
+PASS: all original paragraph texts preserved in original order
+PASS: all original table cell texts preserved
+PASS: original three inline diagrams present
+PASS: new implementation tables appended
+PASS: OpenAPI distinct parameters: POST /api/v1/auth/register
+PASS: OpenAPI distinct parameters: POST /api/v1/auth/login
+PASS: OpenAPI distinct parameters: POST /api/v1/auth/refresh
+PASS: OpenAPI distinct parameters: POST /api/v1/auth/logout
+PASS: OpenAPI distinct parameters: GET /api/v1/me
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations/{org_id}/invitations
+PASS: OpenAPI distinct parameters: POST /api/v1/invitations/accept
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations/{org_id}/members
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations/{org_id}/api-tokens
+PASS: OpenAPI distinct parameters: DELETE /api/v1/api-tokens/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/projects
+PASS: OpenAPI distinct parameters: GET /api/v1/projects
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}
+PASS: OpenAPI distinct parameters: PATCH /api/v1/projects/{id}
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/members
+PASS: OpenAPI distinct parameters: PUT /api/v1/projects/{id}/members/{user_id}
+PASS: OpenAPI distinct parameters: POST /api/v1/projects/{id}/environments
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/environments
+PASS: OpenAPI distinct parameters: PATCH /api/v1/environments/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations/{org_id}/secret-refs
+PASS: OpenAPI distinct parameters: POST /api/v1/environments/{id}/health-check
+PASS: OpenAPI distinct parameters: POST /api/v1/projects/{id}/generations
+PASS: OpenAPI distinct parameters: GET /api/v1/generations/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/projects/{id}/test-cases
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/test-cases
+PASS: OpenAPI distinct parameters: GET /api/v1/test-cases/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/test-cases/{id}/versions
+PASS: OpenAPI distinct parameters: GET /api/v1/test-cases/{id}/versions
+PASS: OpenAPI distinct parameters: POST /api/v1/projects/{id}/suites
+PASS: OpenAPI distinct parameters: POST /api/v1/suites/{id}/cases
+PASS: OpenAPI distinct parameters: POST /api/v1/projects/{id}/plans
+PASS: OpenAPI distinct parameters: POST /api/v1/plans/{id}/schedules
+PASS: OpenAPI distinct parameters: PATCH /api/v1/schedules/{id}
+PASS: OpenAPI distinct parameters: DELETE /api/v1/schedules/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/test-runs
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/test-runs
+PASS: OpenAPI distinct parameters: POST /api/v1/test-runs/{id}/pause
+PASS: OpenAPI distinct parameters: POST /api/v1/test-runs/{id}/resume
+PASS: OpenAPI distinct parameters: POST /api/v1/test-runs/{id}/cancel
+PASS: OpenAPI distinct parameters: POST /api/v1/test-runs/{id}/retry
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}/events
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}/steps
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}/approvals
+PASS: OpenAPI distinct parameters: POST /api/v1/approvals/{id}/decide
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}/report
+PASS: OpenAPI distinct parameters: GET /api/v1/test-runs/{id}/report/export
+PASS: OpenAPI distinct parameters: GET /api/v1/artifacts/{id}/download
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/defects
+PASS: OpenAPI distinct parameters: GET /api/v1/defects/{id}
+PASS: OpenAPI distinct parameters: PATCH /api/v1/defects/{id}
+PASS: OpenAPI distinct parameters: GET /api/v1/defects/{id}/occurrences
+PASS: OpenAPI distinct parameters: POST /api/v1/healing-records/{id}/decision
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/visual-baselines
+PASS: OpenAPI distinct parameters: POST /api/v1/visual-baselines/{id}/decision
+PASS: OpenAPI distinct parameters: GET /api/v1/visual-diffs/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations/{id}/integrations
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations/{id}/integrations
+PASS: OpenAPI distinct parameters: POST /api/v1/integrations/{id}/test
+PASS: OpenAPI distinct parameters: POST /api/v1/webhooks/{provider}
+PASS: OpenAPI distinct parameters: GET /api/v1/notifications
+PASS: OpenAPI distinct parameters: POST /api/v1/notifications/{id}/read
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations/{id}/audit-logs
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations/{id}/usage
+PASS: OpenAPI distinct parameters: GET /api/v1/organizations/{id}/quotas
+PASS: OpenAPI distinct parameters: PUT /api/v1/organizations/{id}/quotas
+PASS: OpenAPI distinct parameters: GET /api/v1/admin/system-settings
+PASS: OpenAPI distinct parameters: PUT /api/v1/admin/system-settings/{key}
+PASS: OpenAPI distinct parameters: GET /api/v1/secret-refs
+PASS: OpenAPI distinct parameters: POST /api/v1/secret-refs
+PASS: OpenAPI distinct parameters: POST /api/v1/secret-refs/{id}/rotate
+PASS: OpenAPI distinct parameters: DELETE /api/v1/secret-refs/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/test-cases/{id}/versions/{version}/approve
+PASS: OpenAPI distinct parameters: POST /api/v1/test-cases/{id}/versions/{version}/rollback
+PASS: OpenAPI distinct parameters: POST /api/v1/schedules/{id}/enable
+PASS: OpenAPI distinct parameters: POST /api/v1/schedules/{id}/disable
+PASS: OpenAPI distinct parameters: POST /api/v1/schedules/{id}/trigger
+PASS: OpenAPI distinct parameters: POST /api/v1/visual-baselines/proposals
+PASS: OpenAPI distinct parameters: POST /api/v1/report-exports
+PASS: OpenAPI distinct parameters: GET /api/v1/report-exports/{id}
+PASS: OpenAPI distinct parameters: GET /api/v1/notifications/preferences
+PASS: OpenAPI distinct parameters: PUT /api/v1/notifications/preferences
+PASS: OpenAPI distinct parameters: POST /api/v1/audit-logs/export
+PASS: OpenAPI distinct parameters: GET /api/v1/api-tokens
+PASS: OpenAPI distinct parameters: POST /api/v1/api-tokens
+PASS: OpenAPI distinct parameters: POST /api/v1/api-tokens/{id}/rotate
+PASS: OpenAPI distinct parameters: GET /api/v1/browser-sessions/{id}
+PASS: OpenAPI distinct parameters: POST /api/v1/sse-tickets
+PASS: OpenAPI distinct parameters: GET /api/v1/health/ready
+PASS: OpenAPI distinct parameters: DELETE /api/v1/projects/{project_id}/members/{user_id}
+PASS: OpenAPI distinct parameters: POST /api/v1/test-cases/{case_id}/archive
+PASS: OpenAPI distinct parameters: GET /api/v1/healing-records/{healing_id}
+PASS: OpenAPI distinct parameters: GET /api/v1/visual-diffs
+PASS: OpenAPI distinct parameters: POST /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate
+PASS: OpenAPI distinct parameters: POST /api/v1/test-case-versions/{version_id}/approve
+PASS: OpenAPI distinct parameters: POST /api/v1/test-cases/{case_id}/rollback
+PASS: OpenAPI distinct parameters: GET /api/v1/environments/{id}/snapshots
+PASS: OpenAPI distinct parameters: POST /api/v1/test-case-versions/{version_id}/publish
+PASS: OpenAPI distinct parameters: GET /api/v1/projects/{id}/test-cases/{case_id}/versions/{version_id}/diff
+PASS: all 101 HTTP operations retained
+PASS: all 101 operationIds unique
+PASS: register no project role metadata
+PASS: Run requires idempotency
+PASS: Valid schema ref for post /api/v1/auth/register 200
+PASS: Valid schema ref for post /api/v1/auth/register 400
+PASS: Valid schema ref for post /api/v1/auth/register 401
+PASS: Valid schema ref for post /api/v1/auth/register 403
+PASS: Valid schema ref for post /api/v1/auth/register 404
+PASS: Valid schema ref for post /api/v1/auth/register 409
+PASS: Valid schema ref for post /api/v1/auth/register 422
+PASS: Valid schema ref for post /api/v1/auth/register 429
+PASS: Valid schema ref for post /api/v1/auth/register 500
+PASS: Valid schema ref for post /api/v1/auth/login 200
+PASS: Valid schema ref for post /api/v1/auth/login 400
+PASS: Valid schema ref for post /api/v1/auth/login 401
+PASS: Valid schema ref for post /api/v1/auth/login 403
+PASS: Valid schema ref for post /api/v1/auth/login 404
+PASS: Valid schema ref for post /api/v1/auth/login 409
+PASS: Valid schema ref for post /api/v1/auth/login 422
+PASS: Valid schema ref for post /api/v1/auth/login 429
+PASS: Valid schema ref for post /api/v1/auth/login 500
+PASS: Valid schema ref for post /api/v1/auth/refresh 200
+PASS: Valid schema ref for post /api/v1/auth/refresh 400
+PASS: Valid schema ref for post /api/v1/auth/refresh 401
+PASS: Valid schema ref for post /api/v1/auth/refresh 403
+PASS: Valid schema ref for post /api/v1/auth/refresh 404
+PASS: Valid schema ref for post /api/v1/auth/refresh 409
+PASS: Valid schema ref for post /api/v1/auth/refresh 422
+PASS: Valid schema ref for post /api/v1/auth/refresh 429
+PASS: Valid schema ref for post /api/v1/auth/refresh 500
+PASS: Valid schema ref for post /api/v1/auth/logout 200
+PASS: Valid schema ref for post /api/v1/auth/logout 400
+PASS: Valid schema ref for post /api/v1/auth/logout 401
+PASS: Valid schema ref for post /api/v1/auth/logout 403
+PASS: Valid schema ref for post /api/v1/auth/logout 404
+PASS: Valid schema ref for post /api/v1/auth/logout 409
+PASS: Valid schema ref for post /api/v1/auth/logout 422
+PASS: Valid schema ref for post /api/v1/auth/logout 429
+PASS: Valid schema ref for post /api/v1/auth/logout 500
+PASS: Valid schema ref for get /api/v1/me 400
+PASS: Valid schema ref for get /api/v1/me 401
+PASS: Valid schema ref for get /api/v1/me 403
+PASS: Valid schema ref for get /api/v1/me 404
+PASS: Valid schema ref for get /api/v1/me 409
+PASS: Valid schema ref for get /api/v1/me 422
+PASS: Valid schema ref for get /api/v1/me 429
+PASS: Valid schema ref for get /api/v1/me 500
+PASS: Valid schema ref for get /api/v1/organizations 400
+PASS: Valid schema ref for get /api/v1/organizations 401
+PASS: Valid schema ref for get /api/v1/organizations 403
+PASS: Valid schema ref for get /api/v1/organizations 404
+PASS: Valid schema ref for get /api/v1/organizations 409
+PASS: Valid schema ref for get /api/v1/organizations 422
+PASS: Valid schema ref for get /api/v1/organizations 429
+PASS: Valid schema ref for get /api/v1/organizations 500
+PASS: Valid schema ref for post /api/v1/organizations 200
+PASS: Valid schema ref for post /api/v1/organizations 400
+PASS: Valid schema ref for post /api/v1/organizations 401
+PASS: Valid schema ref for post /api/v1/organizations 403
+PASS: Valid schema ref for post /api/v1/organizations 404
+PASS: Valid schema ref for post /api/v1/organizations 409
+PASS: Valid schema ref for post /api/v1/organizations 422
+PASS: Valid schema ref for post /api/v1/organizations 429
+PASS: Valid schema ref for post /api/v1/organizations 500
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 200
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 400
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 401
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 403
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 404
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 409
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 422
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 429
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/invitations 500
+PASS: Valid schema ref for post /api/v1/invitations/accept 200
+PASS: Valid schema ref for post /api/v1/invitations/accept 400
+PASS: Valid schema ref for post /api/v1/invitations/accept 401
+PASS: Valid schema ref for post /api/v1/invitations/accept 403
+PASS: Valid schema ref for post /api/v1/invitations/accept 404
+PASS: Valid schema ref for post /api/v1/invitations/accept 409
+PASS: Valid schema ref for post /api/v1/invitations/accept 422
+PASS: Valid schema ref for post /api/v1/invitations/accept 429
+PASS: Valid schema ref for post /api/v1/invitations/accept 500
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 400
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 401
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 403
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 404
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 409
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 422
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 429
+PASS: Valid schema ref for get /api/v1/organizations/{org_id}/members 500
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 200
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 400
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 401
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 403
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 404
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 409
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 422
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 429
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/api-tokens 500
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 200
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 400
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 401
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 403
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 404
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 409
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 422
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 429
+PASS: Valid schema ref for delete /api/v1/api-tokens/{id} 500
+PASS: Valid schema ref for post /api/v1/projects 200
+PASS: Valid schema ref for post /api/v1/projects 400
+PASS: Valid schema ref for post /api/v1/projects 401
+PASS: Valid schema ref for post /api/v1/projects 403
+PASS: Valid schema ref for post /api/v1/projects 404
+PASS: Valid schema ref for post /api/v1/projects 409
+PASS: Valid schema ref for post /api/v1/projects 422
+PASS: Valid schema ref for post /api/v1/projects 429
+PASS: Valid schema ref for post /api/v1/projects 500
+PASS: Valid schema ref for get /api/v1/projects 400
+PASS: Valid schema ref for get /api/v1/projects 401
+PASS: Valid schema ref for get /api/v1/projects 403
+PASS: Valid schema ref for get /api/v1/projects 404
+PASS: Valid schema ref for get /api/v1/projects 409
+PASS: Valid schema ref for get /api/v1/projects 422
+PASS: Valid schema ref for get /api/v1/projects 429
+PASS: Valid schema ref for get /api/v1/projects 500
+PASS: Valid schema ref for get /api/v1/projects/{id} 200
+PASS: Valid schema ref for get /api/v1/projects/{id} 400
+PASS: Valid schema ref for get /api/v1/projects/{id} 401
+PASS: Valid schema ref for get /api/v1/projects/{id} 403
+PASS: Valid schema ref for get /api/v1/projects/{id} 404
+PASS: Valid schema ref for get /api/v1/projects/{id} 409
+PASS: Valid schema ref for get /api/v1/projects/{id} 422
+PASS: Valid schema ref for get /api/v1/projects/{id} 429
+PASS: Valid schema ref for get /api/v1/projects/{id} 500
+PASS: Valid schema ref for patch /api/v1/projects/{id} 200
+PASS: Valid schema ref for patch /api/v1/projects/{id} 400
+PASS: Valid schema ref for patch /api/v1/projects/{id} 401
+PASS: Valid schema ref for patch /api/v1/projects/{id} 403
+PASS: Valid schema ref for patch /api/v1/projects/{id} 404
+PASS: Valid schema ref for patch /api/v1/projects/{id} 409
+PASS: Valid schema ref for patch /api/v1/projects/{id} 422
+PASS: Valid schema ref for patch /api/v1/projects/{id} 429
+PASS: Valid schema ref for patch /api/v1/projects/{id} 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/members 500
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 200
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 400
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 401
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 403
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 404
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 409
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 422
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 429
+PASS: Valid schema ref for put /api/v1/projects/{id}/members/{user_id} 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 200
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 400
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 401
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 403
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 404
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 409
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 422
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 429
+PASS: Valid schema ref for post /api/v1/projects/{id}/environments 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/environments 500
+PASS: Valid schema ref for patch /api/v1/environments/{id} 200
+PASS: Valid schema ref for patch /api/v1/environments/{id} 400
+PASS: Valid schema ref for patch /api/v1/environments/{id} 401
+PASS: Valid schema ref for patch /api/v1/environments/{id} 403
+PASS: Valid schema ref for patch /api/v1/environments/{id} 404
+PASS: Valid schema ref for patch /api/v1/environments/{id} 409
+PASS: Valid schema ref for patch /api/v1/environments/{id} 422
+PASS: Valid schema ref for patch /api/v1/environments/{id} 429
+PASS: Valid schema ref for patch /api/v1/environments/{id} 500
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 200
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 400
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 401
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 403
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 404
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 409
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 422
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 429
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs 500
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 200
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 400
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 401
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 403
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 404
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 409
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 422
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 429
+PASS: Valid schema ref for post /api/v1/environments/{id}/health-check 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 200
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 400
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 401
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 403
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 404
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 409
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 422
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 429
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/generations 202
+PASS: Valid schema ref for get /api/v1/generations/{id} 200
+PASS: Valid schema ref for get /api/v1/generations/{id} 400
+PASS: Valid schema ref for get /api/v1/generations/{id} 401
+PASS: Valid schema ref for get /api/v1/generations/{id} 403
+PASS: Valid schema ref for get /api/v1/generations/{id} 404
+PASS: Valid schema ref for get /api/v1/generations/{id} 409
+PASS: Valid schema ref for get /api/v1/generations/{id} 422
+PASS: Valid schema ref for get /api/v1/generations/{id} 429
+PASS: Valid schema ref for get /api/v1/generations/{id} 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 200
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 400
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 401
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 403
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 404
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 409
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 422
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 429
+PASS: Valid schema ref for post /api/v1/projects/{id}/test-cases 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases 500
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 200
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 400
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 401
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 403
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 404
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 409
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 422
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 429
+PASS: Valid schema ref for get /api/v1/test-cases/{id} 500
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 200
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 400
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 401
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 403
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 404
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 409
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 422
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 429
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions 500
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 200
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 400
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 401
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 403
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 404
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 409
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 422
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 429
+PASS: Valid schema ref for get /api/v1/test-cases/{id}/versions 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 200
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 400
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 401
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 403
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 404
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 409
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 422
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 429
+PASS: Valid schema ref for post /api/v1/projects/{id}/suites 500
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 200
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 400
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 401
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 403
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 404
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 409
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 422
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 429
+PASS: Valid schema ref for post /api/v1/suites/{id}/cases 500
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 200
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 400
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 401
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 403
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 404
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 409
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 422
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 429
+PASS: Valid schema ref for post /api/v1/projects/{id}/plans 500
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 200
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 400
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 401
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 403
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 404
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 409
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 422
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 429
+PASS: Valid schema ref for post /api/v1/plans/{id}/schedules 500
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 200
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 400
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 401
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 403
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 404
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 409
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 422
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 429
+PASS: Valid schema ref for patch /api/v1/schedules/{id} 500
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 200
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 400
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 401
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 403
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 404
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 409
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 422
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 429
+PASS: Valid schema ref for delete /api/v1/schedules/{id} 500
+PASS: Valid schema ref for post /api/v1/test-runs 200
+PASS: Valid schema ref for post /api/v1/test-runs 400
+PASS: Valid schema ref for post /api/v1/test-runs 401
+PASS: Valid schema ref for post /api/v1/test-runs 403
+PASS: Valid schema ref for post /api/v1/test-runs 404
+PASS: Valid schema ref for post /api/v1/test-runs 409
+PASS: Valid schema ref for post /api/v1/test-runs 422
+PASS: Valid schema ref for post /api/v1/test-runs 429
+PASS: Valid schema ref for post /api/v1/test-runs 500
+PASS: Valid schema ref for post /api/v1/test-runs 201
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 200
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id} 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-runs 500
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 200
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 400
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 401
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 403
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 404
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 409
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 422
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 429
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/pause 500
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 200
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 400
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 401
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 403
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 404
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 409
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 422
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 429
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/resume 500
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 200
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 400
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 401
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 403
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 404
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 409
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 422
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 429
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/cancel 500
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 200
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 400
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 401
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 403
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 404
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 409
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 422
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 429
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 500
+PASS: Valid schema ref for post /api/v1/test-runs/{id}/retry 201
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/events 500
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 200
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/steps 500
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 200
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/approvals 500
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 200
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 400
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 401
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 403
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 404
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 409
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 422
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 429
+PASS: Valid schema ref for post /api/v1/approvals/{id}/decide 500
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 200
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report 500
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 200
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 400
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 401
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 403
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 404
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 409
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 422
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 429
+PASS: Valid schema ref for get /api/v1/test-runs/{id}/report/export 500
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 400
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 401
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 403
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 404
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 409
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 422
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 429
+PASS: Valid schema ref for get /api/v1/artifacts/{id}/download 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/defects 500
+PASS: Valid schema ref for get /api/v1/defects/{id} 200
+PASS: Valid schema ref for get /api/v1/defects/{id} 400
+PASS: Valid schema ref for get /api/v1/defects/{id} 401
+PASS: Valid schema ref for get /api/v1/defects/{id} 403
+PASS: Valid schema ref for get /api/v1/defects/{id} 404
+PASS: Valid schema ref for get /api/v1/defects/{id} 409
+PASS: Valid schema ref for get /api/v1/defects/{id} 422
+PASS: Valid schema ref for get /api/v1/defects/{id} 429
+PASS: Valid schema ref for get /api/v1/defects/{id} 500
+PASS: Valid schema ref for patch /api/v1/defects/{id} 200
+PASS: Valid schema ref for patch /api/v1/defects/{id} 400
+PASS: Valid schema ref for patch /api/v1/defects/{id} 401
+PASS: Valid schema ref for patch /api/v1/defects/{id} 403
+PASS: Valid schema ref for patch /api/v1/defects/{id} 404
+PASS: Valid schema ref for patch /api/v1/defects/{id} 409
+PASS: Valid schema ref for patch /api/v1/defects/{id} 422
+PASS: Valid schema ref for patch /api/v1/defects/{id} 429
+PASS: Valid schema ref for patch /api/v1/defects/{id} 500
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 200
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 400
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 401
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 403
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 404
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 409
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 422
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 429
+PASS: Valid schema ref for get /api/v1/defects/{id}/occurrences 500
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 200
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 400
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 401
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 403
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 404
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 409
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 422
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 429
+PASS: Valid schema ref for post /api/v1/healing-records/{id}/decision 500
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 400
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 401
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 403
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 404
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 409
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 422
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 429
+PASS: Valid schema ref for get /api/v1/projects/{id}/visual-baselines 500
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 200
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 400
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 401
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 403
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 404
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 409
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 422
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 429
+PASS: Valid schema ref for post /api/v1/visual-baselines/{id}/decision 500
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 200
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 400
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 401
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 403
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 404
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 409
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 422
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 429
+PASS: Valid schema ref for get /api/v1/visual-diffs/{id} 500
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 200
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 400
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 401
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 403
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 404
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 409
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 422
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 429
+PASS: Valid schema ref for post /api/v1/organizations/{id}/integrations 500
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 200
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 400
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 401
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 403
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 404
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 409
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 422
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 429
+PASS: Valid schema ref for get /api/v1/organizations/{id}/integrations 500
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 200
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 400
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 401
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 403
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 404
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 409
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 422
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 429
+PASS: Valid schema ref for post /api/v1/integrations/{id}/test 500
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 200
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 400
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 401
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 403
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 404
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 409
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 422
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 429
+PASS: Valid schema ref for post /api/v1/webhooks/{provider} 500
+PASS: Valid schema ref for get /api/v1/notifications 400
+PASS: Valid schema ref for get /api/v1/notifications 401
+PASS: Valid schema ref for get /api/v1/notifications 403
+PASS: Valid schema ref for get /api/v1/notifications 404
+PASS: Valid schema ref for get /api/v1/notifications 409
+PASS: Valid schema ref for get /api/v1/notifications 422
+PASS: Valid schema ref for get /api/v1/notifications 429
+PASS: Valid schema ref for get /api/v1/notifications 500
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 200
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 400
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 401
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 403
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 404
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 409
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 422
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 429
+PASS: Valid schema ref for post /api/v1/notifications/{id}/read 500
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 200
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 400
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 401
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 403
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 404
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 409
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 422
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 429
+PASS: Valid schema ref for get /api/v1/organizations/{id}/audit-logs 500
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 200
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 400
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 401
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 403
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 404
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 409
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 422
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 429
+PASS: Valid schema ref for get /api/v1/organizations/{id}/usage 500
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 200
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 400
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 401
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 403
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 404
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 409
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 422
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 429
+PASS: Valid schema ref for get /api/v1/organizations/{id}/quotas 500
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 200
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 400
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 401
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 403
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 404
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 409
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 422
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 429
+PASS: Valid schema ref for put /api/v1/organizations/{id}/quotas 500
+PASS: Valid schema ref for get /api/v1/admin/system-settings 400
+PASS: Valid schema ref for get /api/v1/admin/system-settings 401
+PASS: Valid schema ref for get /api/v1/admin/system-settings 403
+PASS: Valid schema ref for get /api/v1/admin/system-settings 404
+PASS: Valid schema ref for get /api/v1/admin/system-settings 409
+PASS: Valid schema ref for get /api/v1/admin/system-settings 422
+PASS: Valid schema ref for get /api/v1/admin/system-settings 429
+PASS: Valid schema ref for get /api/v1/admin/system-settings 500
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 200
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 400
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 401
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 403
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 404
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 409
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 422
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 429
+PASS: Valid schema ref for put /api/v1/admin/system-settings/{key} 500
+PASS: Valid schema ref for get /api/v1/secret-refs 400
+PASS: Valid schema ref for get /api/v1/secret-refs 401
+PASS: Valid schema ref for get /api/v1/secret-refs 403
+PASS: Valid schema ref for get /api/v1/secret-refs 404
+PASS: Valid schema ref for get /api/v1/secret-refs 409
+PASS: Valid schema ref for get /api/v1/secret-refs 422
+PASS: Valid schema ref for get /api/v1/secret-refs 429
+PASS: Valid schema ref for get /api/v1/secret-refs 500
+PASS: Valid schema ref for post /api/v1/secret-refs 200
+PASS: Valid schema ref for post /api/v1/secret-refs 400
+PASS: Valid schema ref for post /api/v1/secret-refs 401
+PASS: Valid schema ref for post /api/v1/secret-refs 403
+PASS: Valid schema ref for post /api/v1/secret-refs 404
+PASS: Valid schema ref for post /api/v1/secret-refs 409
+PASS: Valid schema ref for post /api/v1/secret-refs 422
+PASS: Valid schema ref for post /api/v1/secret-refs 429
+PASS: Valid schema ref for post /api/v1/secret-refs 500
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 200
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 400
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 401
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 403
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 404
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 409
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 422
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 429
+PASS: Valid schema ref for post /api/v1/secret-refs/{id}/rotate 500
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 200
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 400
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 401
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 403
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 404
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 409
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 422
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 429
+PASS: Valid schema ref for delete /api/v1/secret-refs/{id} 500
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 200
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 400
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 401
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 403
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 404
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 409
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 422
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 429
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/approve 500
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 200
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 400
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 401
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 403
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 404
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 409
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 422
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 429
+PASS: Valid schema ref for post /api/v1/test-cases/{id}/versions/{version}/rollback 500
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 200
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 400
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 401
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 403
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 404
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 409
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 422
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 429
+PASS: Valid schema ref for post /api/v1/schedules/{id}/enable 500
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 200
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 400
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 401
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 403
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 404
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 409
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 422
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 429
+PASS: Valid schema ref for post /api/v1/schedules/{id}/disable 500
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 200
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 400
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 401
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 403
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 404
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 409
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 422
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 429
+PASS: Valid schema ref for post /api/v1/schedules/{id}/trigger 500
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 200
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 400
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 401
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 403
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 404
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 409
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 422
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 429
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 500
+PASS: Valid schema ref for post /api/v1/visual-baselines/proposals 201
+PASS: Valid schema ref for post /api/v1/report-exports 200
+PASS: Valid schema ref for post /api/v1/report-exports 400
+PASS: Valid schema ref for post /api/v1/report-exports 401
+PASS: Valid schema ref for post /api/v1/report-exports 403
+PASS: Valid schema ref for post /api/v1/report-exports 404
+PASS: Valid schema ref for post /api/v1/report-exports 409
+PASS: Valid schema ref for post /api/v1/report-exports 422
+PASS: Valid schema ref for post /api/v1/report-exports 429
+PASS: Valid schema ref for post /api/v1/report-exports 500
+PASS: Valid schema ref for post /api/v1/report-exports 202
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 200
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 400
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 401
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 403
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 404
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 409
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 422
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 429
+PASS: Valid schema ref for get /api/v1/report-exports/{id} 500
+PASS: Valid schema ref for get /api/v1/notifications/preferences 400
+PASS: Valid schema ref for get /api/v1/notifications/preferences 401
+PASS: Valid schema ref for get /api/v1/notifications/preferences 403
+PASS: Valid schema ref for get /api/v1/notifications/preferences 404
+PASS: Valid schema ref for get /api/v1/notifications/preferences 409
+PASS: Valid schema ref for get /api/v1/notifications/preferences 422
+PASS: Valid schema ref for get /api/v1/notifications/preferences 429
+PASS: Valid schema ref for get /api/v1/notifications/preferences 500
+PASS: Valid schema ref for put /api/v1/notifications/preferences 200
+PASS: Valid schema ref for put /api/v1/notifications/preferences 400
+PASS: Valid schema ref for put /api/v1/notifications/preferences 401
+PASS: Valid schema ref for put /api/v1/notifications/preferences 403
+PASS: Valid schema ref for put /api/v1/notifications/preferences 404
+PASS: Valid schema ref for put /api/v1/notifications/preferences 409
+PASS: Valid schema ref for put /api/v1/notifications/preferences 422
+PASS: Valid schema ref for put /api/v1/notifications/preferences 429
+PASS: Valid schema ref for put /api/v1/notifications/preferences 500
+PASS: Valid schema ref for post /api/v1/audit-logs/export 200
+PASS: Valid schema ref for post /api/v1/audit-logs/export 400
+PASS: Valid schema ref for post /api/v1/audit-logs/export 401
+PASS: Valid schema ref for post /api/v1/audit-logs/export 403
+PASS: Valid schema ref for post /api/v1/audit-logs/export 404
+PASS: Valid schema ref for post /api/v1/audit-logs/export 409
+PASS: Valid schema ref for post /api/v1/audit-logs/export 422
+PASS: Valid schema ref for post /api/v1/audit-logs/export 429
+PASS: Valid schema ref for post /api/v1/audit-logs/export 500
+PASS: Valid schema ref for get /api/v1/api-tokens 400
+PASS: Valid schema ref for get /api/v1/api-tokens 401
+PASS: Valid schema ref for get /api/v1/api-tokens 403
+PASS: Valid schema ref for get /api/v1/api-tokens 404
+PASS: Valid schema ref for get /api/v1/api-tokens 409
+PASS: Valid schema ref for get /api/v1/api-tokens 422
+PASS: Valid schema ref for get /api/v1/api-tokens 429
+PASS: Valid schema ref for get /api/v1/api-tokens 500
+PASS: Valid schema ref for post /api/v1/api-tokens 200
+PASS: Valid schema ref for post /api/v1/api-tokens 400
+PASS: Valid schema ref for post /api/v1/api-tokens 401
+PASS: Valid schema ref for post /api/v1/api-tokens 403
+PASS: Valid schema ref for post /api/v1/api-tokens 404
+PASS: Valid schema ref for post /api/v1/api-tokens 409
+PASS: Valid schema ref for post /api/v1/api-tokens 422
+PASS: Valid schema ref for post /api/v1/api-tokens 429
+PASS: Valid schema ref for post /api/v1/api-tokens 500
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 200
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 400
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 401
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 403
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 404
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 409
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 422
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 429
+PASS: Valid schema ref for post /api/v1/api-tokens/{id}/rotate 500
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 200
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 400
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 401
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 403
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 404
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 409
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 422
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 429
+PASS: Valid schema ref for get /api/v1/browser-sessions/{id} 500
+PASS: Valid schema ref for post /api/v1/sse-tickets 200
+PASS: Valid schema ref for post /api/v1/sse-tickets 401
+PASS: Valid schema ref for post /api/v1/sse-tickets 403
+PASS: Valid schema ref for post /api/v1/sse-tickets 404
+PASS: Valid schema ref for post /api/v1/sse-tickets 422
+PASS: Valid schema ref for post /api/v1/sse-tickets 400
+PASS: Valid schema ref for post /api/v1/sse-tickets 409
+PASS: Valid schema ref for post /api/v1/sse-tickets 429
+PASS: Valid schema ref for post /api/v1/sse-tickets 500
+PASS: Valid schema ref for post /api/v1/sse-tickets 201
+PASS: Valid schema ref for get /api/v1/health/ready 200
+PASS: Valid schema ref for get /api/v1/health/ready 400
+PASS: Valid schema ref for get /api/v1/health/ready 401
+PASS: Valid schema ref for get /api/v1/health/ready 403
+PASS: Valid schema ref for get /api/v1/health/ready 404
+PASS: Valid schema ref for get /api/v1/health/ready 409
+PASS: Valid schema ref for get /api/v1/health/ready 429
+PASS: Valid schema ref for get /api/v1/health/ready 500
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 200
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 401
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 403
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 404
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 422
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 400
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 409
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 429
+PASS: Valid schema ref for delete /api/v1/projects/{project_id}/members/{user_id} 500
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 200
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 401
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 403
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 404
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 422
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 400
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 409
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 429
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/archive 500
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 200
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 401
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 403
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 404
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 422
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 400
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 409
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 429
+PASS: Valid schema ref for get /api/v1/healing-records/{healing_id} 500
+PASS: Valid schema ref for get /api/v1/visual-diffs 200
+PASS: Valid schema ref for get /api/v1/visual-diffs 401
+PASS: Valid schema ref for get /api/v1/visual-diffs 403
+PASS: Valid schema ref for get /api/v1/visual-diffs 404
+PASS: Valid schema ref for get /api/v1/visual-diffs 422
+PASS: Valid schema ref for get /api/v1/visual-diffs 400
+PASS: Valid schema ref for get /api/v1/visual-diffs 409
+PASS: Valid schema ref for get /api/v1/visual-diffs 429
+PASS: Valid schema ref for get /api/v1/visual-diffs 500
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 200
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 401
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 403
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 404
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 422
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 400
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 409
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 429
+PASS: Valid schema ref for post /api/v1/organizations/{org_id}/secret-refs/{secret_id}/rotate 500
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 200
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 401
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 403
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 404
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 422
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 400
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 409
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 429
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/approve 500
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 200
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 401
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 403
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 404
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 422
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 400
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 409
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 429
+PASS: Valid schema ref for post /api/v1/test-cases/{case_id}/rollback 500
+PASS: Valid schema ref for get /api/v1/environments/{id}/snapshots 200
+PASS: Valid schema ref for post /api/v1/test-case-versions/{version_id}/publish 200
+PASS: Valid schema ref for get /api/v1/projects/{id}/test-cases/{case_id}/versions/{version_id}/diff 200
+PASS: DSL v3 Schema and example validated (Draft 2020-12)
+PASS: run transition endpoints exist
+PASS: step transition endpoints exist
+PASS: approval transition endpoints exist
+PASS: healing transition endpoints exist
+PASS: browser_session transition endpoints exist
+PASS: rendered PDF pages 93
+PASS: new chapter present: 41. V10.3
+PASS: new chapter present: 42. REST API
+PASS: new chapter present: 43. 数据库
+PASS: new chapter present: 44. 测试状态机
+PASS: new chapter present: 45. 多 Agent
+PASS: new chapter present: 46. 独立 Browser Worker
+PASS: new chapter present: 47. 六大前端
+PASS: new chapter present: 48. Ubuntu/Linux
+PASS: new chapter present: 49. M01
+PASS: new chapter present: 50. 变更追踪
+PASS: new appendices end with scope statement
+NOT RUN: migration execution on PostgreSQL 15; PostgreSQL 18.3 disposable-cluster run recorded below
+NOT RUN: 101 route-level backend conformance tests / generated TS+Pydantic SDK integration
+NOT RUN: actual mTLS Browser Worker container build and egress negative test
+NOT RUN: PM2 startup/restore, staging Nginx SSE reconnection and fault injection
+SCOPE: design/static candidate; NO production approval claimed
+
+TEMPORARY POSTGRESQL MIGRATION RUN — 2026-10-26
+PASS: PostgreSQL 18.3 x64 on Windows, fresh disposable cluster bound to 127.0.0.1:55433; database testpilot, role postgres
+PASS: 001_schema.sql, 002_v5_extensions.sql, 003_v10_repairs.sql, 004_v102_integrity.sql, 005_scope_linkage.sql, 006_email_verification.sql, 007_auth_sessions.sql applied sequentially with psql ON_ERROR_STOP=1
+PASS: read-only 005_preflight_and_validate.sql returned count 0 for all five documented scope mismatches
+PASS: temporary validation ledger recorded all seven migration files; database exposed 52 public base tables and the user_email_verifications, user_sessions, and environment_snapshots tables
+CLEANUP: temporary PostgreSQL server stopped and temporary cluster data removed; no password recorded in this file
+LIMIT: this validates execution on PostgreSQL 18.3 only. PostgreSQL 15 compatibility, populated historical upgrade, rollback, concurrency/lock behavior, and production readiness remain unverified.
+
+LOCAL POSTGRESQL APPLICATION INTEGRATION RUN — 2026-10-26
+PASS: SQLAlchemy/psycopg connected to the user-authorized local PostgreSQL 18.3 database `testpilot` over loopback.
+PASS: `tests.test_postgresql_phase1_integration` exercised email verification persistence, refresh rotation and replay-family revocation, tenant-scoped organization/project membership, environment list/create/update, immutable environment snapshots, and cleanup of its uniquely scoped test records.
+PASS: Real PostgreSQL enforced session and tenant foreign keys; the run exposed and fixed an ORM flush-order defect that SQLite had not surfaced.
+LIMIT: This is one repository-level integration test, not the 101-operation HTTP conformance suite. PostgreSQL 15, populated migration upgrade, concurrent transactions, live SMTP/Redis, browser-cookie/HTTP behavior, Worker egress, and production deployment remain unverified. No database password or token was written to this record.
+
+MIGRATION RUNNER ACCEPTANCE — 2026-10-26
+PASS: `python -m apps.api.scripts.migrate --apply` applied 001–007 on a newly initialized, loopback-only disposable PostgreSQL 18.3 cluster; a subsequent `--check` verified all seven hashes.
+PASS: `005_preflight_and_validate.sql` remained read-only and returned 0 for all five scope-mismatch counts on that fresh schema.
+CLEANUP: disposable cluster stopped and its workspace data directory removed. The persistent local `testpilot` database was only checked read-only by the runner and retained its seven ledger rows.
+LIMIT: runner behavior has not been tested on PostgreSQL 15 or under injected process failures/concurrent migration runners.
+
+PHASE 1 AUTH / TENANCY / ENVIRONMENT COMPLETION SLICE — 2026-10-26
+PASS: user-confirmed M01 invitation behavior (one-time acceptance, verified-email match, explicit expiry timestamp) and M02 role policy are recorded in the decision register; M03 snapshot selection uses the highest non-retired SecretRef version.
+PASS: invitation, organization-bound API-token and metadata-only SecretRef create/rotate persistence and handlers were added. API-token bearer hashes, expiry/revocation, registered permission scopes, implemented M01–M03 route authorization and organization boundary have repository/HTTP coverage. Global organization:create and platform:admin scopes are currently blocked for organization-bound tokens and remain a candidate policy requiring owner confirmation.
+PASS: SecretRef external provider version identifiers are opaque metadata only; no secret value is accepted, persisted, or returned. Environment UI can attach a SecretRef; immutable snapshots pin its highest active version.
+PASS: targeted backend regression groups completed: auth/tenancy/environment modules (34 tests), lifecycle and OpenAPI registry group (6 tests), FastAPI lifecycle/scope HTTP tests (2 tests), and local PostgreSQL repository integration (1 test). These group counts are reported separately and are not a claim that all 101 API operations have runtime handlers.
+PASS: Web TypeScript check, ESLint, Vitest (5 tests), and Vite production build completed successfully after the access and environment UI changes.
+PASS: read-only `python -m apps.api.scripts.migrate --check` verified SHA-256 for migrations 001–007 on local `testpilot`; no migration was applied in this slice. Integration fixture cleanup counts were zero for phase1 test users, organizations, and SecretRefs.
+LIMIT: PostgreSQL 18.3 loopback connectivity and repository/selected HTTP paths are verified. PostgreSQL 15, populated upgrade/rollback, API-token scope enforcement for not-yet-implemented baseline routes, live SMTP/Redis, browser cookie behavior, concurrency, external SecretRef provider, health-check SSRF/egress, and Browser Worker/production deployment remain unverified.
+
+PHASE 1 OWNER DECISIONS AND COMPATIBILITY ROUTES — 2026-10-26
+PASS: owner confirmed organization-bound API tokens continue to reject `organization:create` and `platform:admin`; owner confirmed SecretRef deletion is unavailable until a retention/reference policy is defined.
+PASS: legacy `POST /api/v1/secret-refs` now requires explicit `organization_id`, provider, external key, and opaque provider version; legacy rotate is constrained to the authenticated user's authorized organization. Delete preserves the baseline operationId and returns HTTP 409 without mutation.
+PASS: `python -m compileall -q apps/api tests`; the complete Phase 1 backend gate listed in `docs/PLAN.md` ran 52 tests successfully, including lifecycle FastAPI routes and OpenAPI inventory. The local PostgreSQL phase 1 integration test also passed (1 test).
+PASS: read-only `python -m apps.api.scripts.migrate --check` verified SHA-256 for local migrations 001–007 on `testpilot`; no migration was applied in this check.
+PASS: Web gates: `npm --prefix apps/web run lint`, `npm --prefix apps/web run typecheck`, `npm --prefix apps/web test` (5 tests), and `npm --prefix apps/web run build`.
+LIMIT: selected route/repository behavior is verified; all 101 baseline operations do not yet have runtime handlers and full HTTP contract coverage. No SMTP, Redis, browser-cookie, concurrency, PostgreSQL 15/populated-upgrade, Worker egress, or production deployment claim is made.
+
+PHASE 1 EXTERNAL SERVICE, POSTGRESQL 15, CONCURRENCY, AND BROWSER GATES — 2026-10-27
+PASS: disposable PostgreSQL 15 container: migrations 001–007 applied to a fresh database, all seven SHA-256 hashes verified, and the PostgreSQL repository integration test passed.
+PASS: populated PostgreSQL 15 upgrade: applied 001–005, inserted one synthetic active user and legacy refresh-token family, then applied 006–007. Verified the account remained active and its legacy token family mapped to a `Legacy device` session with one linked refresh token.
+PASS: `tests.test_postgresql_phase1_integration` now passes 2 tests on PostgreSQL 15, including two simultaneous refresh attempts using one old token; only one rotation succeeds and replay revokes the session family, invalidating the returned access token.
+PASS: `tests.test_phase1_live_service_adapters` passed against disposable Redis 7 and Mailpit containers: the Redis Lua fixed-window limit is enforced and an SMTP verification email is visible in Mailpit. The test uses a small RESP2 integration client because the host Python environment lacks the already-declared redis-py package; production redis-py runtime wiring remains unverified.
+PASS: Playwright Test ran in the installed system Chrome against a loopback FastAPI app backed by PostgreSQL 15. The browser stored the refresh credential as Secure, HttpOnly, SameSite=Lax, then sent it on reload and received a rotated cookie.
+PASS: added operation-level inventory generator `python -m apps.api.scripts.report_runtime_api_coverage` and report `docs/api-runtime-coverage.md`. At generation time the candidate OpenAPI contained 101 baseline plus 4 additive operations; runtime registered 31 baseline handlers and 4 additive handlers, leaving 70 baseline operations without runtime handlers. Registration count does not establish contract conformance.
+LIMIT: external-service evidence uses Redis 7 and Mailpit, not production Redis/SMTP; browser evidence uses loopback Chrome and does not establish deployed HTTPS/domain behavior. Migration rollback/lock failure injection, concurrent invitation/membership/token-rotation cases, health-check SSRF/egress through the isolated Worker, full HTTP conformance for all 101 operations, and Ubuntu PM2/Nginx deployment remain unverified.
+PASS: final regression rerun: `python -m compileall -q apps/api tests`; Phase 1 backend group 52/52; PostgreSQL 15 repository/concurrent-refresh integration 2/2; Redis/Mailpit integration 2/2; web lint, typecheck, Vitest 5/5, production build, and Playwright Chrome e2e 1/1 under supported Node 24.
+CLEANUP: removed the synthetic browser-test account and stopped/removed the disposable PostgreSQL 15, Redis 7, and Mailpit containers. The persistent local `testpilot` database was not modified by these PostgreSQL 15 runs.
+
+PHASE 2/3 IMPLEMENTATION BACKLOG AND DEFERRED UNIFIED VALIDATION — 2026-10-27
+STATUS: This section tracks implementation dependencies and deferred validation; nothing listed here is a passed check. M04–M06 candidate code has been updated for owner-confirmed retry/risk, publish-title and scheduling-policy decisions. Per owner direction, finish all related code first, then run one unified validation pass and append actual commands, outputs, and limitations here. The detailed checklist is `docs/phase-2-deferred-validation.md`.
+IMPLEMENTATION TO COMPLETE BEFORE THAT VALIDATION PASS:
+- M01: transactional verification-email Outbox with encrypted token payload, Celery Beat delivery, bounded retry, expiry cancellation, and dead-letter state is implemented with candidate migration 011. `GET /me` is implemented as a single authenticated User object with the registered `user:self` API-token scope. Verify both with unified migration/service/HTTP validation; resolve the original OpenAPI `User[]`/pagination mismatch against the V10.3 source.
+- M09: consume `RUN_REQUESTED` and execute Runs through the durable Run state/event lifecycle, deterministic DSL action/assertion engine, and independently isolated Browser Worker boundary. Current M04–M06 schedule integration creates a queued Run and Outbox event only; it does not execute the Run.
+- M04: OpenAI-compatible provider adapter, Celery Agent Worker/Beat entry points, environment-driven key/base URL/pricing configuration, 3 automatic retries with 2/4/8-second backoff, lease expiry recovery and fencing are implemented as code. A real provider key, pricing configuration and broker are external runtime inputs; no worker/provider process was started. Operational metrics and cancellation/retry race validation remain for the unified pass.
+- M04 operator path: a platform-admin-session-only generation Outbox dead-letter API and Access UI are now implemented; verify authorization, metadata privacy, and attempt/error visibility in the unified HTTP pass.
+- M05: Diff route/query and duplicate approve/rollback/publish/archive aliases are implemented as candidates with baseline operationIds retained; publish `name` is persisted as the version title in `version_name` and reflected in the migration, OpenAPI and UI. Validate their HTTP schemas and responses against V10.3.
+- M06: schedule edit, audit-reason handling, pause/resume and enable/disable aliases, Beat scan, idempotent queued-Run creation, and default serial policy (`max_concurrent_runs=1`) are implemented as candidates and synchronized across API, persistence, Run policy propagation, OpenAPI and UI. `RunAdmissionRepository.claim` now performs transaction-level plan-slot admission, but it is not yet called by a `RUN_REQUESTED` consumer because the Run execution Worker is absent. Finish that integration before claiming the cap is active; preserve and validate the confirmed five-field Cron, DST, missed-fire, and 60-second lateness rules.
+- M03 implementation update (2026-10-27): candidate health-check UI/API, mTLS Browser Gateway, and separate minimal HTTP probe Worker are now present; the API does not probe targets directly. The request/result and exact-allowlist schemas have candidate OpenAPI definitions. The Worker currently rejects non-default ports and cannot resolve attached SecretRefs. No M03 HTTP, mTLS, SSRF, egress, or browser validation was run; full Playwright Worker, provider resolution, production egress controls, and result-history/retention requirements remain open. This supersedes the prior note that M03 code itself was absent.
+- Runtime coverage report refresh (2026-10-27): attempted `python -m apps.api.scripts.report_runtime_api_coverage`; application import stopped because the current Python environment lacks the declared `croniter` dependency. This is not a test result. The checked-in report snapshot predates the M03 handler and must be regenerated after installing the project runtime dependencies.
+UNIFIED VALIDATION AFTER IMPLEMENTATION IS COMPLETE:
+- Apply and inspect candidate migrations 008–010 only in disposable PostgreSQL 15/18 databases; cover empty and populated upgrades, historical RunCase compatibility, transaction rollback/recovery, constraints, and checksums. Never use persistent `testpilot` for destructive fixtures.
+- Run complete OpenAPI/runtime operationId and HTTP request/response/status/auth/idempotency contract checks, repository/API authorization and concurrency suites, and deterministic DSL/Run lifecycle coverage.
+- Run frontend lint/typecheck/unit/build gates and browser flows for generation/review, case versions/Diff/aliases, suites/plans/schedules, Run execution, retries, permissions, and failure states.
+- Exercise duplicate `RUN_REQUESTED` delivery, idempotent Run creation/execution, browser-matrix expansion, atomic environment and case-version pins, cancellation/retry races, DST gaps/folds, missed occurrences, the 60-second boundary, and concurrency policies.
+- Record missing external services or unavailable deployment targets as blocked/unverified. Do not mark any item PASS without the command and its observed output.

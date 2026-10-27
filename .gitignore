@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+*.tsbuildinfo
+apps/web/test-results/
+apps/web/playwright-report/
+.testpilot-pg-temp/
+.testpilot-local-pg-start.log
+.env
+.env.*
+!.env.example
