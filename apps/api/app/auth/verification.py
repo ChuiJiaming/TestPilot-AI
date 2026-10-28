@@ -138,5 +138,5 @@ class EmailVerificationService:
         token_hash = sha256(token.encode("utf-8")).hexdigest()
         return "verified" if self.repository.consume(token_hash, current_time) else None
 
-    def list_dead_email_messages(self, actor_id: UUID, *, limit: int = 50):
-        return self.repository.list_dead_verification_emails(actor_id, limit=limit)
+    def list_dead_email_messages(self, actor_id: UUID, *, limit: int = 50, cursor: str | None = None):
+        return self.repository.list_dead_verification_emails(actor_id, limit=limit, cursor=cursor)

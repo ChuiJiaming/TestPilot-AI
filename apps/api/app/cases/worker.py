@@ -50,6 +50,18 @@ def create_celery_app() -> Celery:
                 "task": "testpilot.recover_expired_generations",
                 "schedule": 15.0,
             },
+            "admit-queued-runs": {
+                "task": "testpilot.admit_queued_runs",
+                "schedule": 5.0,
+            },
+            "recover-expired-run-leases": {
+                "task": "testpilot.recover_expired_run_leases",
+                "schedule": 15.0,
+            },
+            "expire-run-approvals": {
+                "task": "testpilot.expire_run_approvals",
+                "schedule": 60.0,
+            },
             "dispatch-verification-email-outbox": {
                 "task": "testpilot.dispatch_verification_email_outbox",
                 "schedule": 5.0,
@@ -73,7 +85,7 @@ def session_factory():
 
 class GenerationOutboxPublisher:
     def __init__(self, sessions, *, worker_id: str,
-                 event_types=("GENERATION_REQUESTED", "SCHEDULE_TRIGGER_REQUESTED")):
+                 event_types=("GENERATION_REQUESTED", "SCHEDULE_TRIGGER_REQUESTED", "RUN_REQUESTED", "RUN_RESUME_REQUESTED")):
         self.sessions = sessions
         self.worker_id = worker_id
         self.event_types = event_types
@@ -139,13 +151,19 @@ def dispatch_generation_outbox():
             if event["event_type"] == "GENERATION_REQUESTED":
                 task_name = "testpilot.generate_scenario"
                 task_kwargs = {"generation_id": str(UUID(event["payload"]["generation_id"]))}
-            else:
+            elif event["event_type"] == "SCHEDULE_TRIGGER_REQUESTED":
                 task_name = "testpilot.create_scheduled_run"
                 task_kwargs = {"trigger_id": str(UUID(event["payload"]["trigger_id"]))}
+            elif event["event_type"] == "RUN_REQUESTED":
+                task_name = "testpilot.consume_run_requested"
+                task_kwargs = {"event_id": event["id"]}
+            else:
+                task_name = "testpilot.consume_run_resume_requested"
+                task_kwargs = {"event_id": event["id"]}
             celery_app.send_task(
                 task_name,
                 kwargs=task_kwargs,
-                task_id=f"generation-outbox-{event['id']}",
+                task_id=f"outbox-{event['id']}",
             )
             published += int(publisher.published(event["id"], now=datetime.now(timezone.utc)))
         except Exception as exc:
@@ -153,6 +171,138 @@ def dispatch_generation_outbox():
                              error_code=f"dispatch:{type(exc).__name__}")
     return {"claimed": len(events), "published": published}
 
+
+
+@celery_app.task(name="testpilot.consume_run_requested")
+def consume_run_requested(event_id: int):
+    from apps.api.app.environments.persistence import EnvironmentSnapshotRepository
+    from apps.api.app.runs.repository import RunRepository
+
+    sessions = session_factory()
+    repository = RunRepository(sessions, EnvironmentSnapshotRepository(sessions))
+    worker_id = f"run-admission:{uuid4()}"
+    result = repository.consume_run_requested(
+        int(event_id), worker_id=worker_id, now=datetime.now(timezone.utc))
+    if result.get("claimed"):
+        celery_app.send_task(
+            "testpilot.execute_admitted_run",
+            kwargs={
+                "run_id": str(result["run_id"]),
+                "attempt_token": str(result["attempt_token"]),
+                "worker_id": worker_id,
+            },
+            task_id=f"run-attempt-{result['run_id']}-{result['attempt_token']}",
+        )
+    return result
+
+
+@celery_app.task(name="testpilot.admit_queued_runs")
+def admit_queued_runs():
+    from apps.api.app.environments.persistence import EnvironmentSnapshotRepository
+    from apps.api.app.runs.repository import RunRepository
+
+    sessions = session_factory()
+    repository = RunRepository(sessions, EnvironmentSnapshotRepository(sessions))
+    worker_id = f"run-admission:{uuid4()}"
+    claims = repository.claim_queued_runs(
+        worker_id=worker_id, now=datetime.now(timezone.utc), limit=50)
+    for claim in claims:
+        celery_app.send_task(
+            "testpilot.execute_admitted_run",
+            kwargs={
+                "run_id": str(claim["run_id"]),
+                "attempt_token": str(claim["attempt_token"]),
+                "worker_id": worker_id,
+            },
+            task_id=f"run-attempt-{claim['run_id']}-{claim['attempt_token']}",
+        )
+    finalized = repository.finalize_unclaimed_cancellations(
+        now=datetime.now(timezone.utc), limit=100)
+    return {"claimed": len(claims), "cancelled": len(finalized)}
+
+
+@celery_app.task(name="testpilot.consume_run_resume_requested")
+def consume_run_resume_requested(event_id: int):
+    from apps.api.app.runs.repository import RunRepository
+
+    repository = RunRepository(session_factory())
+    worker_id = f"run-resume:{uuid4()}"
+    result = repository.consume_run_resume_requested(
+        int(event_id), worker_id=worker_id, now=datetime.now(timezone.utc))
+    if result.get("claimed"):
+        celery_app.send_task(
+            "testpilot.execute_admitted_run",
+            kwargs={
+                "run_id": str(result["run_id"]),
+                "attempt_token": str(result["attempt_token"]),
+                "worker_id": worker_id,
+            },
+            task_id=f"run-resume-{result['run_id']}-{result['attempt_token']}",
+        )
+    return result
+
+
+@celery_app.task(name="testpilot.recover_expired_run_leases")
+def recover_expired_run_leases():
+    from apps.api.app.environments.persistence import EnvironmentSnapshotRepository
+    from apps.api.app.runs.repository import RunRepository
+
+    sessions = session_factory()
+    repository = RunRepository(sessions, EnvironmentSnapshotRepository(sessions))
+    now = datetime.now(timezone.utc)
+    worker_id = f"run-recovery:{uuid4()}"
+    recovered = []
+    for run_id in repository.expired_run_ids(now=now, limit=100):
+        result = repository.reconcile_expired_run(
+            run_id, worker_id=worker_id, now=now)
+        if (result.get("recovered") and not result.get("manual_reconciliation")
+                and not result.get("terminal") and not result.get("paused")):
+            recovered.append(result)
+            celery_app.send_task(
+                "testpilot.execute_admitted_run",
+                kwargs={
+                    "run_id": str(result["run_id"]),
+                    "attempt_token": str(result["attempt_token"]),
+                    "worker_id": worker_id,
+                },
+                task_id=f"run-recovery-{result['run_id']}-{result['attempt_token']}",
+            )
+    return {"recovered": len(recovered)}
+
+
+@celery_app.task(name="testpilot.expire_run_approvals")
+def expire_run_approvals():
+    from apps.api.app.runs.repository import RunRepository
+
+    repository = RunRepository(session_factory())
+    return repository.expire_due_run_approvals(now=datetime.now(timezone.utc), limit=100)
+
+
+@celery_app.task(name="testpilot.execute_admitted_run")
+def execute_admitted_run(run_id: str, attempt_token: str, worker_id: str):
+    from apps.api.app.runs.agent import execute_admitted_run as execute_run
+
+    try:
+        return execute_run(
+            session_factory(),
+            run_id=UUID(run_id),
+            attempt_token=UUID(attempt_token),
+            worker_id=worker_id,
+        )
+    except Exception as exc:
+        from apps.api.app.runs.repository import RunRepository, RunStateConflict, StaleRunAttempt
+
+        repository = RunRepository(session_factory())
+        try:
+            repository.transition(
+                UUID(run_id), "ERROR", expected_status={"PREPARING", "RUNNING"},
+                now=datetime.now(timezone.utc),
+                payload={"reason_code": f"WORKER_{type(exc).__name__.upper()}"},
+                attempt_token=UUID(attempt_token), worker_id=worker_id,
+            )
+        except (StaleRunAttempt, RunStateConflict):
+            pass
+        raise
 
 @celery_app.task(name="testpilot.generate_scenario")
 def generate_scenario(generation_id: str):

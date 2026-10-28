@@ -140,6 +140,7 @@ class DeadGenerationOutboxItem(BaseModel):
 
 class DeadGenerationOutboxPage(BaseModel):
     items: list[DeadGenerationOutboxItem]
+    next_cursor: str | None
 
 
 def create_planning_router(
@@ -220,7 +221,7 @@ def create_planning_router(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid generation cursor") from exc
 
-    @router.post("/projects/{id}/test-cases/generate", status_code=202,
+    @router.post("/projects/{id}/test-cases/generate", status_code=202, deprecated=True,
                  operation_id="post_api_v1_projects_id_test_cases_generate")
     def create_generation_alias(id: UUID, payload: GenerationCreate,
                                 credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
@@ -424,15 +425,20 @@ def create_planning_router(
     )
     def list_dead_generation_outbox(
         limit: int = Query(default=50, ge=1, le=100),
+        cursor: str | None = Query(default=None),
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     ):
+        if generations is None:
+            raise HTTPException(status_code=503, detail="Generation service is not configured")
         principal = principal_for(credentials)
         if principal.get("credential_type") == "api_token":
             raise HTTPException(status_code=403, detail="Platform administrator session required")
         try:
             actor_id = UUID(principal["id"])
-            return {"items": generations.list_dead_outbox_events(actor_id, limit=limit)}
+            return generations.list_dead_outbox_events(actor_id, limit=limit, cursor=cursor)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail="Platform administrator session required") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid cursor") from exc
 
     return router

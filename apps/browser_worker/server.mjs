@@ -1,9 +1,10 @@
 import https from "node:https";
 import http from "node:http";
 import { readFile } from "node:fs/promises";
-import { lookup } from "node:dns/promises";
 import { domainToASCII } from "node:url";
 import ipaddr from "ipaddr.js";
+import { browserWorkerReadiness, handleBrowserWorkerRequest } from "./browser_sessions.mjs";
+import { resolveWorkerHostname } from "./worker_dns.mjs";
 
 const port = Number(process.env.TESTPILOT_WORKER_PORT ?? "9444");
 const maxBodyBytes = 32 * 1024;
@@ -43,7 +44,7 @@ function normalizeDomain(value) {
 async function pinnedResolution(hostname) {
   let timer;
   const answers = await Promise.race([
-    lookup(hostname, { all: true, verbatim: true }),
+    resolveWorkerHostname(hostname),
     new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error("DNS_TIMEOUT"), { code: "DNS_TIMEOUT" })), 3000); }),
   ]).finally(() => clearTimeout(timer));
   if (!answers.length || answers.some((entry) => !publicAddress(entry.address))) {
@@ -127,11 +128,69 @@ function awaitImportHttp() {
 const cert = await readFile(process.env.TESTPILOT_WORKER_TLS_CERT);
 const key = await readFile(process.env.TESTPILOT_WORKER_TLS_KEY);
 const ca = await readFile(process.env.TESTPILOT_WORKER_CLIENT_CA_CERT);
+const rawGatewayUrls = process.env.TESTPILOT_WORKER_GATEWAY_URLS_JSON;
+const gatewayRegistrationUrls = rawGatewayUrls
+  ? JSON.parse(rawGatewayUrls)
+  : process.env.TESTPILOT_WORKER_GATEWAY_URL
+    ? [process.env.TESTPILOT_WORKER_GATEWAY_URL] : [];
+if (!Array.isArray(gatewayRegistrationUrls)
+    || gatewayRegistrationUrls.some((value) => typeof value !== "string")) {
+  throw new Error("Worker Gateway URLs must be a JSON array of HTTPS origins");
+}
+const registrationTargets = gatewayRegistrationUrls.map((value) => {
+  const parsed = new URL(value);
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password
+      || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error("Worker Gateway registration URLs must be HTTPS origins");
+  }
+  return new URL("/internal/workers/register", parsed.origin);
+});
+let registrationCert = null;
+let registrationKey = null;
+let registrationCa = null;
+if (registrationTargets.length) {
+  registrationCert = await readFile(process.env.TESTPILOT_WORKER_GATEWAY_CLIENT_CERT || process.env.TESTPILOT_WORKER_TLS_CERT);
+  registrationKey = await readFile(process.env.TESTPILOT_WORKER_GATEWAY_CLIENT_KEY || process.env.TESTPILOT_WORKER_TLS_KEY);
+  registrationCa = await readFile(process.env.TESTPILOT_WORKER_GATEWAY_CA_CERT);
+}
+
 const server = https.createServer({ cert, key, ca, requestCert: true, rejectUnauthorized: true }, async (req, res) => {
-  if (req.method === "GET" && req.url === "/internal/health/ready") return json(res, 200, { ready: true, worker_version: "health-probe-v1" });
+  if (req.method === "GET" && req.url === "/internal/health/ready") {
+    const status = browserWorkerReadiness();
+    return json(res, status.ready ? 200 : 503, { ...status, browser_session_actions: true });
+  }
+  if (await handleBrowserWorkerRequest(req, res)) return;
   if (req.method !== "POST" || req.url !== "/internal/v1/health-checks") return json(res, 404, { error: "NOT_FOUND" });
   try { return json(res, 200, await probe(await readJson(req))); }
   catch (error) { return json(res, error.status ?? 500, { error: error.status ? error.message : "WORKER_INTERNAL_ERROR" }); }
 });
 server.requestTimeout = requestTimeoutMs + 1000;
-server.listen(port, "0.0.0.0");
+server.listen(port, "0.0.0.0", () => {
+  if (!registrationTargets.length) return;
+  const registerAt = (target) => new Promise((resolve) => {
+    const readiness = browserWorkerReadiness();
+    const payload = Buffer.from(JSON.stringify(readiness));
+    const request = https.request(target, {
+      method: "POST", cert: registrationCert, key: registrationKey,
+      ca: registrationCa, rejectUnauthorized: true, timeout: 5000,
+      headers: { "content-type": "application/json", "content-length": payload.length, "connection": "close" },
+    }, (response) => {
+      response.resume();
+      if (response.statusCode !== 200) process.stderr.write("Worker registration rejected\n");
+      resolve();
+    });
+    request.on("timeout", () => request.destroy(new Error("GATEWAY_REGISTRATION_TIMEOUT")));
+    request.on("error", () => { process.stderr.write("Worker registration unavailable\n"); resolve(); });
+    request.end(payload);
+  });
+  const register = () => {
+    void Promise.allSettled(registrationTargets.map(registerAt)).then((results) => {
+      if (results.some((result) => result.status === "rejected")) {
+        process.stderr.write("Worker registration unavailable\n");
+      }
+    });
+  };
+  register();
+  const timer = setInterval(register, 15000);
+  timer.unref();
+});

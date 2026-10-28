@@ -1,9 +1,10 @@
 """Idempotent scheduled Run creation from an M06 trigger intent."""
 
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String, Uuid, func, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Uuid, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -32,6 +33,12 @@ class TestRunRecord(AuthBase):
     environment_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("environments.id"), nullable=False)
     environment_snapshot_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True), ForeignKey("environment_snapshots.id", ondelete="RESTRICT"))
+    parent_run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id"))
+    requested_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
+    request_intent: Mapped[str | None] = mapped_column(String)
+    branch: Mapped[str | None] = mapped_column(String)
+    commit_sha: Mapped[str | None] = mapped_column(String)
+    event_replay_floor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     status: Mapped[str] = mapped_column(String, nullable=False)
     trigger_source: Mapped[str] = mapped_column(String, nullable=False)
     browser_matrix: Mapped[list] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
@@ -54,8 +61,81 @@ class RunCaseRecord(AuthBase):
     case_version_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_case_versions.id"), nullable=False)
     browser_name: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, nullable=False)
+    lease_owner: Mapped[str | None] = mapped_column(String)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TestStepRecord(AuthBase):
+    __tablename__ = "test_steps"
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    run_case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("run_cases.id", ondelete="CASCADE"), nullable=False)
+    action_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_type: Mapped[str] = mapped_column(String, nullable=False)
+    locator: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    expected: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    replay_policy: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String)
+    attempt_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AgentEventRecord(AuthBase):
+    __tablename__ = "agent_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id", ondelete="CASCADE"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkerLeaseRecord(AuthBase):
+    __tablename__ = "worker_leases"
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    resource_type: Mapped[str] = mapped_column(String, nullable=False)
+    resource_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    lease_owner: Mapped[str] = mapped_column(String, nullable=False)
+    attempt_token: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    claimed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProcessedEventRecord(AuthBase):
+    __tablename__ = "processed_events"
+    consumer_name: Mapped[str] = mapped_column(String, primary_key=True)
+    event_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("outbox_events.id", ondelete="CASCADE"), primary_key=True)
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BrowserSessionRecord(AuthBase):
+    __tablename__ = "browser_sessions"
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    run_case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("run_cases.id", ondelete="CASCADE"), nullable=False)
+    browser: Mapped[str] = mapped_column(String, nullable=False)
+    worker_instance: Mapped[str] = mapped_column(String, nullable=False)
+    attempt_token: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class SseTicketRecord(AuthBase):
+    __tablename__ = "sse_tickets"
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class RunCreationBlocked(Exception):
@@ -75,7 +155,7 @@ class RunAdmissionRepository:
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
-    def claim(self, run_id: UUID, *, worker_id: str, now: datetime, lease_seconds: int = 60):
+    def claim(self, run_id: UUID, *, worker_id: str, now: datetime, lease_seconds: int = 60, session=None):
         """Claim a queued Run only when its plan has an available execution slot.
 
         Locking the plan row serializes admission attempts from independent workers.
@@ -83,7 +163,8 @@ class RunAdmissionRepository:
         """
         if not worker_id or lease_seconds < 1:
             raise ValueError("worker_id and a positive lease_seconds are required")
-        with self.session_factory.begin() as session:
+        transaction = self.session_factory.begin() if session is None else nullcontext(session)
+        with transaction as session:
             plan_id = session.scalar(select(TestRunRecord.plan_id).where(TestRunRecord.id == run_id))
             if plan_id is None:
                 run = session.get(TestRunRecord, run_id, with_for_update=True)
@@ -123,6 +204,26 @@ class RunAdmissionRepository:
             run.claimed_at = now
             run.attempt_token = attempt_token
             run.started_at = run.started_at or now
+            lease = session.scalar(select(WorkerLeaseRecord).where(
+                WorkerLeaseRecord.resource_type == "run",
+                WorkerLeaseRecord.resource_id == run.id,
+            ).with_for_update())
+            if lease is None:
+                session.add(WorkerLeaseRecord(
+                    id=uuid4(), resource_type="run", resource_id=run.id,
+                    lease_owner=worker_id, attempt_token=attempt_token,
+                    lease_expires_at=run.lease_expires_at, heartbeat_at=now, claimed_at=now,
+                ))
+            else:
+                lease.lease_owner = worker_id
+                lease.attempt_token = attempt_token
+                lease.lease_expires_at = run.lease_expires_at
+                lease.heartbeat_at = now
+                lease.claimed_at = now
+            session.add(AgentEventRecord(
+                run_id=run.id, event_type="run.started",
+                payload={"trigger_source": run.trigger_source}, created_at=now,
+            ))
             session.flush()
             return {
                 "claimed": True,

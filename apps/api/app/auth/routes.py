@@ -89,6 +89,7 @@ class DeadVerificationEmail(BaseModel):
 
 class DeadVerificationEmailPage(BaseModel):
     items: list[DeadVerificationEmail]
+    next_cursor: str | None
 
 
 class EmailVerificationResult(BaseModel):
@@ -309,22 +310,52 @@ def create_auth_router(
             raise HTTPException(status_code=404, detail="Session not found")
         return AuthSessionRevoked(status="revoked")
 
+    return router
+
+
+def create_verification_admin_router(
+    *,
+    service: EmailVerificationService | None,
+    auth_sessions: AuthSessionService | None,
+) -> APIRouter:
+    router = APIRouter(prefix="/api/v1/admin", tags=["Auth & Orgs"])
+    bearer_scheme = HTTPBearer(scheme_name="BearerAuth", auto_error=False)
+
     @router.get(
-        "/admin/verification-email-outbox/dead",
+        "/verification-email-outbox/dead",
         response_model=DeadVerificationEmailPage,
         operation_id="get_api_v1_admin_verification_email_outbox_dead",
+        responses={
+            400: {"description": "Invalid cursor", "model": ProblemDetails},
+            401: {"description": "Authentication required", "model": ProblemDetails},
+            403: {"description": "Platform administrator session required", "model": ProblemDetails},
+            503: {"description": "Email verification is not configured", "model": ProblemDetails},
+        },
     )
     def list_dead_verification_emails(
         limit: int = Query(default=50, ge=1, le=100),
+        cursor: str | None = Query(default=None),
         credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     ):
-        user = current_user(credentials)
+        if service is None or auth_sessions is None:
+            raise HTTPException(status_code=503, detail="Email verification is not configured")
+        if credentials is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        user = auth_sessions.authenticate(credentials.credentials)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
         if user.get("credential_type") == "api_token":
             raise HTTPException(status_code=403, detail="Platform administrator session required")
         try:
-            return {"items": configured().list_dead_email_messages(UUID(user["id"]), limit=limit)}
+            actor_id = UUID(user["id"])
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=401, detail="Invalid authenticated principal") from exc
+        try:
+            return service.list_dead_email_messages(actor_id, limit=limit, cursor=cursor)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail="Platform administrator session required") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid cursor") from exc
 
     return router
 

@@ -1,20 +1,22 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Activity, Boxes, Building2, CalendarClock, ChevronDown, CircleHelp, FileCode2, KeyRound, Layers3, LogOut, Monitor, Plus, RefreshCw, ShieldCheck, Sparkles, UsersRound, Workflow } from "lucide-react";
+import { Activity, Boxes, Building2, CalendarClock, ChevronDown, CircleHelp, FileCode2, KeyRound, Layers3, LogOut, Monitor, Play, Plus, RefreshCw, ShieldCheck, Sparkles, UsersRound, Workflow } from "lucide-react";
 import { api, ApiError, jsonBody, type ApiToken, type AuthResult, type Environment, type EnvironmentSnapshot, type Organization, type Project, type SecretRef, type Session } from "./api";
 import { Button } from "./components/ui/button";
 import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
 import { CasesPage } from "./CasesPage";
+import { RunConsolePage } from "./RunConsolePage";
 import { PlanningPage } from "./PlanningPage";
 import "./styles.css";
 import "./members.css";
 import "./environments.css";
 import "./cases.css";
 import "./planning.css";
+import "./run-console.css";
 
 type AuthMode = "login" | "register" | "verify";
-type Page = "overview" | "projects" | "members" | "environments" | "cases" | "planning" | "sessions" | "access";
+type Page = "overview" | "projects" | "members" | "environments" | "cases" | "planning" | "runs" | "sessions" | "access";
 type Readiness = { status: "ready" | "not_ready"; checks: Record<string, string> };
 let sessionRefreshPromise: Promise<AuthResult> | undefined;
 
@@ -144,7 +146,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
   }, []);
 
   const selectedProject = useMemo(() => projects.find((project) => project.id === selectedProjectId), [projects, selectedProjectId]);
-  const pageTitle = { overview: "工作台", projects: "组织与项目", members: "成员与权限", environments: "测试环境", cases: "用例与版本", planning: "生成、套件与调度", sessions: "安全与会话", access: "邀请与凭据" }[page];
+  const pageTitle = { overview: "工作台", projects: "组织与项目", members: "成员与权限", environments: "测试环境", cases: "用例与版本", planning: "生成、套件与调度", sessions: "安全与会话", runs: "运行控制台", access: "邀请与凭据" }[page];
 
   async function createOrganization(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); const data = new FormData(event.currentTarget);
@@ -189,6 +191,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
           <NavItem icon={<Layers3 size={17} />} label="测试环境" active={page === "environments"} onClick={() => setPage("environments")} />
           <NavItem icon={<FileCode2 size={17} />} label="用例与版本" active={page === "cases"} onClick={() => setPage("cases")} />
           <NavItem icon={<CalendarClock size={17} />} label="生成、套件与调度" active={page === "planning"} onClick={() => setPage("planning")} />
+          <NavItem icon={<Play size={17} />} label="运行控制台" active={page === "runs"} onClick={() => setPage("runs")} />
         </nav>
         <div className="nav-label nav-label-spaced">账户</div>
         <nav className="main-nav" aria-label="账户导航">
@@ -200,14 +203,15 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
       <main className="main-area">
         <header className="topbar"><div className="breadcrumbs">工作区 <span>/</span> <strong>{pageTitle}</strong></div><div className="top-actions"><Button variant="ghost" className="icon-button" aria-label="刷新数据" onClick={() => void loadWorkspace()}><RefreshCw size={16} /></Button><div className="user-chip"><div className="user-avatar">{(auth.user.display_name || auth.user.email).slice(0, 1).toUpperCase()}</div><div><strong>{auth.user.display_name}</strong><small>{auth.user.email}</small></div><Button variant="ghost" className="icon-button" aria-label="退出登录" onClick={() => void signOut()}><LogOut size={16} /></Button></div></div></header>
         <section className="page-content">
-          <div className="page-heading"><div><div className="eyebrow muted">TESTPILOT AI · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "管理测试目标和不可变运行快照。" : page === "cases" ? "维护测试用例和版本审核；DSL 细节及历史兼容按契约清单处理。" : page === "planning" ? "管理 AI 生成任务、测试套件、执行计划与调度。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
+          <div className="page-heading"><div><div className="eyebrow muted">TESTPILOT AI · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "管理测试目标和不可变运行快照。" : page === "cases" ? "维护测试用例和版本审核；DSL 细节及历史兼容按契约清单处理。" : page === "planning" ? "管理 AI 生成任务、测试套件、执行计划与调度。" : page === "runs" ? "创建和观察 Run；数据库快照是状态依据，事件流用于进度更新。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
           {error && <div className="alert alert-error page-alert" role="alert">{error}</div>}
           {loading ? <Loading /> : page === "overview" ? <Overview organizations={organizations} projects={projects} sessions={sessions} onNavigate={setPage} />
             : page === "projects" ? <ProjectsPage organizations={organizations} projects={projects} showOrgForm={showOrgForm} showProjectForm={showProjectForm} setShowOrgForm={setShowOrgForm} setShowProjectForm={setShowProjectForm} onCreateOrg={createOrganization} onCreateProject={createProject} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setPage("members"); }} />
               : page === "members" ? <MembersPage project={selectedProject} accessToken={auth.access_token} />
               : page === "cases" ? <CasesPage projects={projects} project={selectedProject} onSelectProject={setSelectedProjectId} accessToken={auth.access_token} />
               : page === "planning" ? <PlanningPage projects={projects} project={selectedProject} onSelectProject={setSelectedProjectId} accessToken={auth.access_token} />
-              : page === "sessions" ? <SessionsPage sessions={sessions} onRevoke={revokeSession} />
+              : page === "runs" ? <RunConsolePage project={selectedProject} accessToken={auth.access_token} />
+                : page === "sessions" ? <SessionsPage sessions={sessions} onRevoke={revokeSession} />
                 : page === "access" ? <AccessPage organizations={organizations} projects={projects} accessToken={auth.access_token} />
                   : <EnvironmentPage project={selectedProject} accessToken={auth.access_token} />}
         </section>

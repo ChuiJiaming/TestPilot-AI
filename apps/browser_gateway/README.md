@@ -1,13 +1,9 @@
-# TestPilot Browser Gateway (M03 health probe)
+# TestPilot Browser Gateway
 
-This Node service is a small, independent Gateway entry point for the M03 HTTP health probe. It accepts only `POST /internal/v1/health-checks`, requires an API client certificate signed by `TESTPILOT_GATEWAY_API_CLIENT_CA_CERT`, then forwards the bounded request to the configured independent Worker over mutual TLS. It does not connect to customer sites or execute Playwright actions.
+This mTLS service routes the M03 HTTP health probe and M08 browser-session traffic to independent Browser Workers. It does not connect to customer targets itself.
 
-Run with Node 22 or newer after installing the package (there are no direct Gateway npm dependencies):
+For browser actions, the Gateway verifies the Agent Worker HS256 job token and checks the Run, RunCase, browser, attempt token, and selected Worker identity before forwarding. Worker instances register over mTLS; the certificate common name must equal a Worker ID in `TESTPILOT_GATEWAY_WORKER_POOL_JSON`, a JSON object mapping IDs to HTTPS origins. Heartbeats expire after 45 seconds. The Gateway assigns new sessions to the least-loaded ready Worker and routes all later actions by the signed `worker_instance` claim, preserving session affinity.
 
-```powershell
-npm --prefix apps/browser_gateway start
-```
+The Gateway server trusts both the API client CA and `TESTPILOT_GATEWAY_WORKER_CLIENT_CA_CERT` for inbound mTLS. It uses `TESTPILOT_GATEWAY_WORKER_CERT`, `TESTPILOT_GATEWAY_WORKER_KEY`, and `TESTPILOT_GATEWAY_WORKER_CA_CERT` for Gateway-to-Worker mTLS. The Worker registers to `https://<gateway-origin>/internal/workers/register` every 15 seconds with a registration client certificate whose common name matches `TESTPILOT_WORKER_INSTANCE`. Worker origins are deployment configuration and cannot be supplied in registration payloads. Each Worker heartbeats every directly configured Gateway origin, so separate Gateway processes can maintain their own in-memory registry. Every Gateway origin used by the Agent Worker must be included in `TESTPILOT_WORKER_GATEWAY_URLS_JSON` and the Worker must be reachable from each Gateway. When using the candidate Worker egress ACL, the Gateway origin must resolve to an address on the dedicated Worker subnet.
 
-Required settings: `TESTPILOT_GATEWAY_TLS_CERT`, `TESTPILOT_GATEWAY_TLS_KEY`, `TESTPILOT_GATEWAY_API_CLIENT_CA_CERT`, `TESTPILOT_GATEWAY_WORKER_CERT`, `TESTPILOT_GATEWAY_WORKER_KEY`, `TESTPILOT_GATEWAY_WORKER_CA_CERT`, and `TESTPILOT_WORKER_URL`. The default bind is port 9443. `GET /internal/health/ready` also requires a trusted client certificate.
-
-Certificates, network ACLs, service isolation, and end-to-end mTLS have not been provisioned or verified. Do not expose this listener publicly.
+Set `TESTPILOT_BROWSER_JOB_TOKEN_SECRET` identically in the Agent Worker, Gateway, and Browser Worker. The Gateway accepts only fixed internal health, registration, drain, and session routes. DNS-pinned browser egress controls remain backed by a required production network ACL; certificate provisioning, rotation, pool setup, and all runtime checks are deferred to unified validation.

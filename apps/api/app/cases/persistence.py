@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from apps.api.app.auth.persistence import AuthBase
+from apps.api.app.core.audit import append_audit_entry
 from apps.api.app.tenancy.persistence import (
     OrganizationMembershipRecord,
     ProjectMembershipRecord,
@@ -53,6 +54,9 @@ class CaseApprovalRecord(AuthBase):
     __tablename__ = "approvals"
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    project_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("projects.id"), nullable=False)
+    target_kind: Mapped[str] = mapped_column(String, nullable=False)
+    target_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id"))
     case_version_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_case_versions.id"))
     requested_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
@@ -62,6 +66,7 @@ class CaseApprovalRecord(AuthBase):
     reason: Mapped[str | None] = mapped_column(String)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -154,11 +159,12 @@ class CaseRepository:
                 version_name=dsl.title,
                 steps=[step.model_dump(mode="json") for step in dsl.steps],
                 assertions=[item.model_dump(mode="json") for item in dsl.assertions],
-                changelog=changelog, review_status="DRAFT", created_by=actor_id,
+                changelog=changelog, review_status="PENDING_APPROVAL", created_by=actor_id,
                 created_at=now, approved_by=None, approved_at=None,
             )
             session.add(record)
             session.flush()
+            self._request_case_version_approval(session, case, record, actor_id=actor_id, now=now)
             return self._version_dict(record)
 
     def get_version(self, actor_id: UUID, case_id: UUID, version: int):
@@ -175,7 +181,8 @@ class CaseRepository:
                 raise CaseScopeError
             return self._version_dict(row)
 
-    def decide_version(self, actor_id: UUID, version_id: UUID, *, decision: str, reason: str, now: datetime):
+    def decide_version(self, actor_id: UUID, version_id: UUID, *, decision: str,
+                       reason: str | None, now: datetime):
         with self.session_factory.begin() as session:
             record = session.get(TestCaseVersionRecord, version_id, with_for_update=True)
             if record is None:
@@ -183,25 +190,116 @@ class CaseRepository:
             case = session.get(TestCaseRecord, record.case_id)
             if case is None:
                 raise CaseScopeError
-            self._visible_project(session, actor_id, case.project_id)
-            if record.review_status not in {"DRAFT", "PENDING_APPROVAL"}:
+            self._visible_project(session, actor_id, case.project_id, for_write=True)
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.target_kind == "case_version",
+                CaseApprovalRecord.target_id == version_id,
+                CaseApprovalRecord.case_version_id == version_id,
+                CaseApprovalRecord.project_id == case.project_id,
+            ).with_for_update())
+            if record.review_status != "PENDING_APPROVAL" or approval is None or approval.status != "PENDING":
                 raise CaseVersionConflict("case version is not awaiting a decision")
             if record.created_by == actor_id:
                 raise CasePermissionDenied("author and reviewer must differ")
-            status = "APPROVED" if decision == "APPROVED" else "REJECTED"
-            session.add(CaseApprovalRecord(
-                id=uuid4(), run_id=None, case_version_id=record.id,
-                requested_by=record.created_by, decided_by=actor_id,
-                kind="CASE_VERSION", status=status, reason=reason,
-                decided_at=now, expires_at=None, created_at=now,
-            ))
-            record.review_status = status
-            record.review_reason = reason
-            if status == "APPROVED":
-                record.approved_by = actor_id
-                record.approved_at = now
-            session.flush()
+            self._apply_case_version_decision(
+                session, case, record, approval, actor_id,
+                decision=decision, reason=reason, now=now,
+            )
             return self._version_dict(record)
+
+    def decide_approval(self, actor_id: UUID, approval_id: UUID, *,
+                        decision: str, reason: str | None, now: datetime):
+        with self.session_factory.begin() as session:
+            target = session.get(CaseApprovalRecord, approval_id)
+            if (target is None or target.target_kind != "case_version"
+                    or target.case_version_id is None or target.target_id != target.case_version_id):
+                raise CaseScopeError
+            record = session.scalar(select(TestCaseVersionRecord).where(
+                TestCaseVersionRecord.id == target.case_version_id,
+            ).with_for_update())
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.id == approval_id,
+                CaseApprovalRecord.target_kind == "case_version",
+            ).with_for_update())
+            if record is None or approval is None:
+                raise CaseScopeError
+            case = session.get(TestCaseRecord, record.case_id)
+            if case is None:
+                raise CaseScopeError
+            if approval.project_id != case.project_id:
+                raise CaseScopeError
+            self._visible_project(session, actor_id, case.project_id, for_write=True)
+            if record.review_status != "PENDING_APPROVAL" or approval.status != "PENDING":
+                raise CaseVersionConflict("approval is no longer pending")
+            if approval.requested_by == actor_id:
+                raise CasePermissionDenied("requester and decider must differ")
+            self._apply_case_version_decision(
+                session, case, record, approval, actor_id,
+                decision=decision, reason=reason, now=now,
+            )
+            return self._approval_dict(approval)
+
+    @staticmethod
+    def _request_case_version_approval(session, case, record, *, actor_id, now):
+        approval = CaseApprovalRecord(
+            id=uuid4(), project_id=case.project_id,
+            target_kind="case_version", target_id=record.id,
+            run_id=None, case_version_id=record.id,
+            requested_by=actor_id, decided_by=None,
+            kind="CASE_VERSION", status="PENDING", reason=None,
+            decided_at=None, expires_at=None,
+            payload={"version": record.version}, created_at=now,
+        )
+        session.add(approval)
+        session.flush()
+        project = session.get(ProjectRecord, case.project_id)
+        if project is None:
+            raise CaseScopeError
+        append_audit_entry(
+            session, organization_id=project.organization_id,
+            actor_user_id=actor_id, action="approval.requested",
+            resource_type="case_version", resource_id=record.id,
+            metadata={"approval_id": str(approval.id), "target_kind": "case_version"},
+            created_at=now,
+        )
+        return approval
+
+    @staticmethod
+    def _apply_case_version_decision(session, case, record, approval, actor_id,
+                                     *, decision, reason: str | None, now):
+        if decision not in {"APPROVED", "REJECTED"}:
+            raise CaseVersionConflict("unsupported approval decision")
+        status = "APPROVED" if decision == "APPROVED" else "REJECTED"
+        approval.status = status
+        approval.decided_by = actor_id
+        approval.reason = reason
+        approval.decided_at = now
+        record.review_status = status
+        record.review_reason = reason
+        if status == "APPROVED":
+            record.approved_by = actor_id
+            record.approved_at = now
+        project = session.get(ProjectRecord, case.project_id)
+        if project is None:
+            raise CaseScopeError
+        append_audit_entry(
+            session, organization_id=project.organization_id,
+            actor_user_id=actor_id, action="approval.decided",
+            resource_type="case_version", resource_id=record.id,
+            metadata={"approval_id": str(approval.id), "decision": status,
+                      "target_kind": "case_version"},
+            created_at=now,
+        )
+        session.flush()
+
+    @staticmethod
+    def _approval_dict(row):
+        return {
+            "id": row.id, "project_id": row.project_id,
+            "target_kind": row.target_kind, "target_id": row.target_id,
+            "status": row.status, "requested_by": row.requested_by,
+            "kind": row.kind, "expires_at": row.expires_at,
+        }
 
     def publish_version(self, actor_id: UUID, version_id: UUID, *, name: str | None, now: datetime):
         with self.session_factory.begin() as session:
@@ -250,11 +348,13 @@ class CaseRepository:
                 version_name=source.version_name or source.dsl_title,
                 steps=source.steps, assertions=source.assertions,
                 changelog=f"Rollback from v{source.version}: {reason}",
-                review_status="DRAFT", review_reason=None, created_by=actor_id,
+                review_status="PENDING_APPROVAL", review_reason=None, created_by=actor_id,
                 created_at=now, approved_by=None, approved_at=None,
             )
             session.add(restored)
             session.flush()
+            self._request_case_version_approval(
+                session, case, restored, actor_id=actor_id, now=now)
             return self._version_dict(restored)
 
     def archive_case(self, actor_id: UUID, case_id: UUID):

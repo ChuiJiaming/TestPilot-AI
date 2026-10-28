@@ -71,7 +71,7 @@ export function CasesPage({ projects, project, onSelectProject, accessToken }: {
       const parsed: unknown = JSON.parse(dsl);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("DSL 必须是 JSON 对象");
       const saved = await api<CaseVersion>(`/api/v1/test-cases/${caseId}/versions`, jsonBody({ dsl: parsed, changelog }), accessToken);
-      setVersions((current) => [saved, ...current]); setChangelog(""); setNotice(`v${saved.version} 已保存为不可变草稿。`);
+      setVersions((current) => [saved, ...current]); setChangelog(""); setNotice(`v${saved.version} 已创建并提交审核。`);
     } catch (caught) { setError(errorMessage(caught)); }
     finally { setBusy(false); }
   }
@@ -79,7 +79,7 @@ export function CasesPage({ projects, project, onSelectProject, accessToken }: {
   async function decideVersion(version: CaseVersion, decision: "APPROVED" | "REJECTED") {
     setBusy(true); setError(""); setNotice("");
     try {
-      await api<CaseVersion>("/api/v1/test-case-versions/" + version.id + "/approve", jsonBody({ decision, reason: reviewReason }), accessToken);
+      await api<CaseVersion>("/api/v1/test-cases/" + caseId + "/versions/" + version.version + "/approve", jsonBody({ decision, reason: reviewReason }), accessToken);
       const page = await api<{ items: CaseVersion[] }>("/api/v1/test-cases/" + caseId + "/versions", {}, accessToken);
       setVersions(page.items); setNotice("v" + version.version + (decision === "APPROVED" ? " 已批准。" : " 已拒绝。"));
     } catch (caught) { setError(errorMessage(caught)); }
@@ -102,7 +102,7 @@ export function CasesPage({ projects, project, onSelectProject, accessToken }: {
     try {
       const created = await api<CaseVersion>("/api/v1/test-cases/" + caseId + "/rollback",
         jsonBody({ target_version: String(version.version), reason: reviewReason }), accessToken);
-      setVersions((current) => [created, ...current]); setNotice("已从 v" + version.version + " 创建新草稿 v" + created.version + "。");
+      setVersions((current) => [created, ...current]); setNotice("已从 v" + version.version + " 创建待审核版本 v" + created.version + "。");
     } catch (caught) { setError(errorMessage(caught)); }
     finally { setBusy(false); }
   }
@@ -138,7 +138,7 @@ export function CasesPage({ projects, project, onSelectProject, accessToken }: {
       </>}
     </Card>
     {selected && <div className="case-detail-grid">
-      <Card className="form-card"><div className="form-card-title"><div><CardTitle>新增 DSL 版本</CardTitle><p>{selected.title} · v2 信封必须包含匹配的 case_id</p></div></div><form className="form-stack" onSubmit={createVersion}><div><Label htmlFor="case-dsl">DSL v2 JSON</Label><textarea id="case-dsl" className="input policy-editor case-dsl-editor" value={dsl} onChange={(event) => setDsl(event.target.value)} required spellCheck={false} placeholder={`{\n  "schema_version": 2,\n  "case_id": "${selected.id}",\n  "title": "${selected.title}",\n  "steps": [{"action":"navigate","url":"/"},{"action":"click","locator":{"by":"role","value":"button","name":"Continue","exact":true}},{"action":"fill","locator":{"by":"label","value":"Email"},"text":"qa@example.test"}],\n  "assertions": [{"type":"text","locator":{"by":"text","value":"Welcome"},"expected":"Welcome","match":"contains"},{"type":"url","expected":"/home","match":"contains"}]\n}`} /></div><div><Label htmlFor="case-changelog">变更说明</Label><Input id="case-changelog" value={changelog} onChange={(event) => setChangelog(event.target.value)} maxLength={2000} /></div><small>steps/assertions 已采用受限 DSL v2；草稿需独立审核和发布后方可用于未来运行。</small><Button type="submit" disabled={busy}>保存不可变版本</Button></form></Card>
+      <Card className="form-card"><div className="form-card-title"><div><CardTitle>新增 DSL 版本</CardTitle><p>{selected.title} · v2 信封必须包含匹配的 case_id</p></div></div><form className="form-stack" onSubmit={createVersion}><div><Label htmlFor="case-dsl">DSL v2 JSON</Label><textarea id="case-dsl" className="input policy-editor case-dsl-editor" value={dsl} onChange={(event) => setDsl(event.target.value)} required spellCheck={false} placeholder={`{\n  "schema_version": 2,\n  "case_id": "${selected.id}",\n  "title": "${selected.title}",\n  "steps": [{"action":"navigate","url":"/"},{"action":"click","locator":{"by":"role","value":"button","name":"Continue","exact":true}},{"action":"fill","locator":{"by":"label","value":"Email"},"text":"qa@example.test"}],\n  "assertions": [{"type":"text","locator":{"by":"text","value":"Welcome"},"expected":"Welcome","match":"contains"},{"type":"url","expected":"/home","match":"contains"}]\n}`} /></div><div><Label htmlFor="case-changelog">变更说明</Label><Input id="case-changelog" value={changelog} onChange={(event) => setChangelog(event.target.value)} maxLength={2000} /></div><small>steps/assertions 已采用受限 DSL v2；新版本创建后进入待审批；审批通过并发布后方可用于后续运行。</small><Button type="submit" disabled={busy}>提交审核</Button></form></Card>
       <Card className="form-card">
         <div className="form-card-title"><div><CardTitle>版本历史与审核</CardTitle><p>审核人与作者必须不同；发布只切换未来执行引用。</p></div><Button variant="danger" type="button" disabled={busy || selected.status === "archived"} onClick={() => void archiveCase()}>归档用例</Button></div>
         <div className="case-review-tools"><Label htmlFor="case-review-reason">审核/回滚原因</Label><Input id="case-review-reason" value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} required /></div>
@@ -146,7 +146,7 @@ export function CasesPage({ projects, project, onSelectProject, accessToken }: {
         <div className="case-version-list">{versions.map((version) => <article className="case-version-row" key={version.id}>
           <div><b>v{version.version} · {version.version_name ?? version.dsl.title ?? "标题未记录"}</b><span className="status-pill">{version.review_status ?? "状态未记录"}</span></div>
           <small>{version.changelog || "无变更说明"} · {new Date(version.created_at).toLocaleString()}</small>
-          <div className="button-row">{(version.review_status === "DRAFT" || version.review_status === "PENDING_APPROVAL") && <><Button variant="secondary" type="button" disabled={busy || !reviewReason} onClick={() => void decideVersion(version, "APPROVED")}>批准</Button><Button variant="danger" type="button" disabled={busy || !reviewReason} onClick={() => void decideVersion(version, "REJECTED")}>拒绝</Button></>}{version.review_status === "APPROVED" && <><Label htmlFor={`version-name-${version.id}`}>版本标题</Label><Input id={`version-name-${version.id}`} value={versionNames[version.id] ?? version.version_name ?? version.dsl.title ?? ""} onChange={(event) => setVersionNames((current) => ({ ...current, [version.id]: event.target.value }))} maxLength={250} /><Button type="button" disabled={busy || !(versionNames[version.id] ?? version.version_name ?? version.dsl.title ?? "").trim()} onClick={() => void publishVersion(version)}>发布</Button></>}{versions.length > 1 && <Button variant="secondary" type="button" disabled={busy || !compareVersionId} onClick={() => void compareVersions(version)}>与所选版本比较</Button>}{version.review_status !== null && <Button variant="secondary" type="button" disabled={busy || !reviewReason} onClick={() => void rollbackVersion(version)}>从此版本回滚</Button>}</div>
+          <div className="button-row">{version.review_status === "PENDING_APPROVAL" && <><Button variant="secondary" type="button" disabled={busy || !reviewReason} onClick={() => void decideVersion(version, "APPROVED")}>批准</Button><Button variant="danger" type="button" disabled={busy || !reviewReason} onClick={() => void decideVersion(version, "REJECTED")}>拒绝</Button></>}{version.review_status === "APPROVED" && <><Label htmlFor={`version-name-${version.id}`}>版本标题</Label><Input id={`version-name-${version.id}`} value={versionNames[version.id] ?? version.version_name ?? version.dsl.title ?? ""} onChange={(event) => setVersionNames((current) => ({ ...current, [version.id]: event.target.value }))} maxLength={250} /><Button type="button" disabled={busy || !(versionNames[version.id] ?? version.version_name ?? version.dsl.title ?? "").trim()} onClick={() => void publishVersion(version)}>发布</Button></>}{versions.length > 1 && <Button variant="secondary" type="button" disabled={busy || !compareVersionId} onClick={() => void compareVersions(version)}>与所选版本比较</Button>}{version.review_status !== null && <Button variant="secondary" type="button" disabled={busy || !reviewReason} onClick={() => void rollbackVersion(version)}>从此版本回滚</Button>}</div>
           <pre>{JSON.stringify(version.dsl, null, 2)}</pre>
         </article>)}{versions.length === 0 && <div className="empty-inline">尚无版本。</div>}</div>
         {diffResult && <pre className="case-diff-result">{JSON.stringify(diffResult, null, 2)}</pre>}

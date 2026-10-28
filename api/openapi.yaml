@@ -2236,8 +2236,8 @@ paths:
       security:
       - BearerAuth: []
       responses:
-        '200':
-          description: Success
+        '202':
+          description: Generation job accepted
           content:
             application/json:
               schema:
@@ -2319,6 +2319,65 @@ paths:
       x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:write
+  /api/v1/projects/{id}/test-cases/generate:
+    post:
+      tags: [Cases & Plans]
+      operationId: post_api_v1_projects_id_test_cases_generate
+      summary: Deprecated alias for project generation creation
+      description: Use POST /api/v1/projects/{id}/generations. This alias shares the same handler and remains only for compatibility.
+      deprecated: true
+      security:
+      - BearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/V102PostApiV1ProjectsIdGenerationsInput'}
+      responses:
+        '202':
+          description: Generation job accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GenerationJob'}
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '403':
+          description: Scope or role denied
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '404':
+          description: Project not found or scoped out
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '409':
+          description: Conflicting state
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+      x-required-roles: [project_admin, tester]
+      x-tenant-scope: project
+      x-contract-status: DEPRECATED_COMPATIBILITY_ALIAS_PENDING_HTTP_VALIDATION
+      x-required-permissions: [resource:write]
   /api/v1/generations/{id}:
     get:
       tags:
@@ -4185,7 +4244,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Approval'
+                $ref: '#/components/schemas/ApprovalPage'
         '400':
           description: Invalid request
           content:
@@ -4350,9 +4409,12 @@ paths:
       x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
       x-project-scope: project
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
+      x-approval-run-ttl: 30m; case-version approvals do not expire
+      x-expiry-sweep-interval: 60s
+      x-acceptance: Source handler is present; runtime, auth, status and client contract checks remain in unified validation
+      x-separation-of-duties: requester_id != decider_id; recheck current project write access under target lock
       x-required-permissions:
-      - resource:write
+      - approval:decide
   /api/v1/test-runs/{id}/report:
     get:
       tags:
@@ -6315,6 +6377,10 @@ paths:
         in: query
         required: false
         schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: string, minLength: 1, maxLength: 512}
       responses:
         '200':
           description: Dead-letter page
@@ -6328,6 +6394,21 @@ paths:
               schema: {$ref: '#/components/schemas/ProblemDetails'}
         '403':
           description: Platform administrator session required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '400':
+          description: Invalid cursor
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '503':
+          description: Email verification is not configured
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '422':
+          description: Query validation failed
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ProblemDetails'}
@@ -6346,6 +6427,10 @@ paths:
         in: query
         required: false
         schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: string, minLength: 1, maxLength: 512}
       responses:
         '200':
           description: Dead-letter page
@@ -6354,6 +6439,9 @@ paths:
               schema: {$ref: '#/components/schemas/DeadGenerationOutboxPage'}
         '401': {description: Authentication required}
         '403': {description: Platform administrator session required}
+        '400': {description: Invalid cursor}
+        '503': {description: Generation service unavailable}
+        '422': {description: Query validation failed}
       x-required-roles: [platform_admin]
       x-tenant-scope: platform
       x-contract-status: ADDITIVE_CANDIDATE_PENDING_HTTP_VALIDATION
@@ -8768,18 +8856,24 @@ components:
           additionalProperties: true
     DeadVerificationEmailPage:
       type: object
-      required: [items]
+      required: [items, next_cursor]
       properties:
         items:
           type: array
           items: {$ref: '#/components/schemas/DeadVerificationEmail'}
+        next_cursor:
+          type: string
+          nullable: true
     DeadGenerationOutboxPage:
       type: object
-      required: [items]
+      required: [items, next_cursor]
       properties:
         items:
           type: array
           items: {$ref: '#/components/schemas/DeadGenerationOutboxItem'}
+        next_cursor:
+          type: string
+          nullable: true
     DeadGenerationOutboxItem:
       type: object
       required: [id, aggregate_id, event_type, status, attempts, created_at, available_at]
@@ -11024,13 +11118,13 @@ components:
         decision:
           type: string
           enum:
-          - APPROVED
-          - REJECTED
+          - APPROVE
+          - REJECT
         reason:
           type: string
-          maxLength: 2000
       required:
       - decision
+      - reason
     SseTicketCreateV10:
       type: object
       additionalProperties: false
@@ -11849,6 +11943,13 @@ components:
     Approval:
       type: object
       additionalProperties: false
+      required:
+      - id
+      - project_id
+      - target_kind
+      - target_id
+      - status
+      - requested_by
       properties:
         id: *id005
         project_id: *id005
@@ -11862,9 +11963,27 @@ components:
           - REJECTED
           - EXPIRED
           - CANCELLED
-        requested_by: *id005
-      required:
-      - id
+        requested_by:
+          type: string
+          format: uuid
+          nullable: true
+        kind:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+    ApprovalPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Approval'}
+        next_cursor:
+          type: string
+          nullable: true
     Defect:
       type: object
       additionalProperties: false

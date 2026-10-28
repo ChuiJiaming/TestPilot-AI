@@ -1,0 +1,240 @@
+.run-console-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
+  gap: 18px;
+  margin-bottom: 18px;
+}
+.run-create-card, .run-list-card, .run-detail-card, .run-steps-card, .run-events-card {
+  min-width: 0;
+}
+.run-card-heading, .run-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.run-card-heading .card-title, .run-detail-heading .card-title {
+  margin: 5px 0 0;
+}
+.run-create-form {
+  display: grid;
+  gap: 14px;
+}
+.run-create-form .button {
+  width: fit-content;
+}
+.run-muted {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.run-list {
+  display: grid;
+  gap: 6px;
+  max-height: 390px;
+  overflow: auto;
+}
+.run-list-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  padding: 11px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.run-list-item:hover, .run-list-item.selected {
+  border-color: var(--border);
+  background: var(--muted);
+}
+.run-list-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.run-list-main strong {
+  font-size: 13px;
+}
+.run-list-main small, .run-list-id, .run-detail-heading small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.run-list-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8591a3;
+}
+.run-status-dot.status-running, .run-status-dot.status-preparing, .run-status-dot.status-finalizing {
+  background: #477af1;
+  box-shadow: 0 0 0 4px rgba(71, 122, 241, 0.12);
+}
+.run-status-dot.status-passed { background: #18a77a; }
+.run-status-dot.status-failed, .run-status-dot.status-error { background: #dc5962; }
+.run-status-dot.status-paused, .run-status-dot.status-waiting_approval { background: #d49328; }
+.run-empty {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.run-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+.run-detail-card, .run-steps-card, .run-events-card {
+  align-self: start;
+}
+.run-events-card {
+  grid-column: 1 / -1;
+}
+.run-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.run-connection.live {
+  color: #188560;
+  background: rgba(24, 167, 122, 0.08);
+}
+.run-connection.reconnecting {
+  color: #a16b18;
+  background: rgba(212, 147, 40, 0.09);
+}
+.run-connection-icon {
+  display: flex;
+}
+.run-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px 0;
+  border-top: 1px solid var(--border);
+}
+.run-meta-grid > div {
+  display: grid;
+  gap: 5px;
+}
+.run-meta-grid small, .run-meta-grid strong {
+  font-size: 12px;
+}
+.run-meta-grid small {
+  color: var(--muted-foreground);
+}
+.run-meta-grid strong {
+  overflow-wrap: anywhere;
+}
+.run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.run-controls .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.run-manual-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  border: 1px solid rgba(212, 147, 40, 0.3);
+  border-radius: 9px;
+  background: rgba(212, 147, 40, 0.08);
+  color: #956317;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.run-approval-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.run-approval-actions > small {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.run-step-count, .run-events-card .run-card-heading > small {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.run-step-list, .run-event-list {
+  display: grid;
+  max-height: 420px;
+  overflow: auto;
+}
+.run-step-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) 90px 26px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.run-step-status {
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--muted);
+  padding: 4px 7px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.run-step-status.status-passed { color: #168260; background: rgba(24, 167, 122, 0.1); }
+.run-step-status.status-failed, .run-step-status.status-error { color: #c1434e; background: rgba(220, 89, 98, 0.1); }
+.run-step-action {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.run-step-browser, .run-step-row small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.run-event-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 95px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+}
+.run-event-row span, .run-event-row time {
+  color: var(--muted-foreground);
+}
+.run-event-row strong {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 920px) {
+  .run-console-grid, .run-detail-grid { grid-template-columns: 1fr; }
+  .run-events-card { grid-column: auto; }
+}
+@media (max-width: 560px) {
+  .run-step-row { grid-template-columns: 76px minmax(0, 1fr) 24px; }
+  .run-step-browser { display: none; }
+  .run-detail-heading { align-items: flex-start; flex-direction: column; }
+}

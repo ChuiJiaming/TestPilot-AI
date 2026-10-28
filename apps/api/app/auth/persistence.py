@@ -1,11 +1,13 @@
 """SQLAlchemy persistence for the candidate email-verification schema."""
 
+import base64
+import binascii
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 import json
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Uuid, select, text, update, or_
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Uuid, and_, select, text, update, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -206,18 +208,29 @@ class SqlAlchemyVerificationRepository:
                 row.available_at = now + timedelta(seconds=min(3600, 2 ** min(row.attempts, 12)))
             return True
 
-    def list_dead_verification_emails(self, actor_id, *, limit=50):
+    def list_dead_verification_emails(self, actor_id, *, limit=50, cursor=None):
         with self.session_factory() as session:
             user = session.get(UserRecord, actor_id)
             if user is None or user.platform_role != "platform_admin":
                 raise PermissionError("platform administrator access required")
-            rows = session.scalars(
-                select(VerificationEmailOutboxRecord)
-                .where(VerificationEmailOutboxRecord.status == "DEAD")
-                .order_by(VerificationEmailOutboxRecord.created_at.desc(), VerificationEmailOutboxRecord.id.desc())
-                .limit(limit)
-            ).all()
-            return [{
+            cursor_key = self._decode_email_outbox_cursor(cursor) if cursor is not None else None
+            statement = select(VerificationEmailOutboxRecord).where(
+                VerificationEmailOutboxRecord.status == "DEAD")
+            if cursor_key is not None:
+                created_at, outbox_id = cursor_key
+                statement = statement.where(or_(
+                    VerificationEmailOutboxRecord.created_at < created_at,
+                    and_(VerificationEmailOutboxRecord.created_at == created_at,
+                         VerificationEmailOutboxRecord.id < outbox_id),
+                ))
+            rows = session.scalars(statement.order_by(
+                VerificationEmailOutboxRecord.created_at.desc(),
+                VerificationEmailOutboxRecord.id.desc(),
+            ).limit(limit + 1)).all()
+            has_more = len(rows) > limit
+            items = rows[:limit]
+            next_cursor = self._encode_email_outbox_cursor(items[-1]) if has_more and items else None
+            return {"items": [{
                 "id": row.id,
                 "recipient_email": row.recipient_email,
                 "status": row.status,
@@ -225,7 +238,30 @@ class SqlAlchemyVerificationRepository:
                 "last_error": row.last_error,
                 "created_at": row.created_at,
                 "expires_at": row.expires_at,
-            } for row in rows]
+            } for row in items], "next_cursor": next_cursor}
+
+    @staticmethod
+    def _encode_email_outbox_cursor(row):
+        created_at = row.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        value = f"{created_at.astimezone(timezone.utc).isoformat()}\0{row.id}".encode("utf-8")
+        return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_email_outbox_cursor(cursor):
+        try:
+            if not cursor or len(cursor) > 512:
+                raise ValueError("cursor length is invalid")
+            padded = cursor + "=" * (-len(cursor) % 4)
+            raw = base64.b64decode(padded, altchars=b"-_", validate=True).decode("utf-8")
+            raw_timestamp, raw_id = raw.split("\0", 1)
+            timestamp = datetime.fromisoformat(raw_timestamp)
+            if timestamp.tzinfo is None:
+                raise ValueError("cursor timestamp must include a timezone")
+            return timestamp.astimezone(timezone.utc), UUID(raw_id)
+        except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
+            raise ValueError("Invalid email outbox cursor") from exc
 
     def consume(self, token_hash, now):
         with self.session_factory.begin() as session:

@@ -160,12 +160,13 @@ def create_case_router(
         except CaseScopeError as exc:
             raise HTTPException(status_code=404, detail="Case not found") from exc
 
-    def apply_decision(case_id: UUID, version_id: UUID, payload: CaseVersionDecision,
+    def apply_decision(case_id: UUID, version_id: UUID, *, decision: str,
+                       reason: str | None,
                        credentials: HTTPAuthorizationCredentials | None):
         actor_id = actor(credentials, permission="approval:decide", case_id=case_id)
         try:
-            return cases.decide_version(actor_id, version_id, decision=payload.decision,
-                                        reason=payload.reason, now=datetime.now(timezone.utc))
+            return cases.decide_version(actor_id, version_id, decision=decision,
+                                        reason=reason, now=datetime.now(timezone.utc))
         except CaseScopeError as exc:
             raise HTTPException(status_code=404, detail="Case version not found") from exc
         except CasePermissionDenied as exc:
@@ -175,13 +176,16 @@ def create_case_router(
 
     @router.post("/test-case-versions/{version_id}/approve",
                  operation_id="post_api_v1_test_case_versions_version_id_approve")
-    def decide_version_by_id(version_id: UUID, payload: CaseVersionDecision,
+    def decide_version_by_id(version_id: UUID,
                               credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
         require_login(credentials)
         case_id = cases.case_id_for_version(version_id) if cases is not None else None
         if case_id is None:
             raise HTTPException(status_code=404, detail="Case version not found")
-        return apply_decision(case_id, version_id, payload, credentials)
+        return apply_decision(
+            case_id, version_id, decision="APPROVED", reason=None,
+            credentials=credentials,
+        )
 
     @router.post("/test-cases/{id}/versions/{version}/approve",
                  operation_id="post__api_v1_test_cases__id__versions__version__approve")

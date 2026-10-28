@@ -5,7 +5,12 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from apps.api.app.core.errors import install_error_handlers
-from apps.api.app.auth.routes import PasswordHash, create_auth_router, create_me_router
+from apps.api.app.auth.routes import (
+    PasswordHash,
+    create_auth_router,
+    create_me_router,
+    create_verification_admin_router,
+)
 from apps.api.app.auth.verification import EmailVerificationService
 from apps.api.app.auth.bootstrap import build_auth_components, settings_from_environment
 from apps.api.app.auth.sessions import AuthSessionService
@@ -20,6 +25,8 @@ from apps.api.app.cases.persistence import CaseRepository
 from apps.api.app.cases.routes import create_case_router
 from apps.api.app.cases.planning import GenerationRepository, PlanningRepository
 from apps.api.app.cases.planning_routes import create_planning_router
+from apps.api.app.runs.repository import RunRepository
+from apps.api.app.runs.routes import create_run_router
 
 
 ReadinessProbe = Callable[[], bool]
@@ -40,6 +47,7 @@ def create_app(
     case_repository: CaseRepository | None = None,
     planning_repository: PlanningRepository | None = None,
     generation_repository: GenerationRepository | None = None,
+    run_repository: RunRepository | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="TestPilot AI API",
@@ -55,6 +63,9 @@ def create_app(
             allowed_origins=allowed_origins,
         )
     )
+    app.include_router(create_verification_admin_router(
+        service=email_verification_service, auth_sessions=auth_sessions
+    ))
     app.include_router(create_me_router(auth_sessions=auth_sessions))
     app.include_router(
         create_tenancy_router(repository=tenancy_repository, auth_sessions=auth_sessions)
@@ -78,6 +89,11 @@ def create_app(
         planning=planning_repository, generations=generation_repository,
         auth_sessions=auth_sessions,
     ))
+    app.include_router(create_run_router(
+        repository=run_repository, case_repository=case_repository,
+        auth_sessions=auth_sessions,
+        allowed_origins=allowed_origins,
+    ))
     app.state.readiness_probes = dict(readiness_probes or {})
     app.state.expected_readiness_dependencies = (
         "postgresql",
@@ -85,7 +101,11 @@ def create_app(
         "object_storage",
     )
 
-    @app.get("/api/v1/health/ready", tags=["Health"])
+    @app.get(
+        "/api/v1/health/ready",
+        tags=["Health"],
+        operation_id="get_api_v1_health_ready",
+    )
     def readiness() -> JSONResponse:
         probes: Mapping[str, ReadinessProbe] = app.state.readiness_probes
         checks: dict[str, str] = {}
@@ -141,6 +161,7 @@ def create_default_app() -> FastAPI:
         case_repository=components.case_repository,
         planning_repository=components.planning_repository,
         generation_repository=components.generation_repository,
+        run_repository=RunRepository(components.sessions, components.environment_snapshots),
     )
 
 

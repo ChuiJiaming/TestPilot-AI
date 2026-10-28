@@ -9,7 +9,7 @@ import binascii
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, Numeric, String, Uuid, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, Numeric, String, Uuid, and_, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, mapped_column
@@ -500,19 +500,29 @@ class GenerationRepository:
     def __init__(self, session_factory):
         self.session_factory = session_factory
 
-    def list_dead_outbox_events(self, actor_id, *, limit=50):
+    def list_dead_outbox_events(self, actor_id, *, limit=50, cursor=None):
         with self.session_factory() as session:
             user = session.get(UserRecord, actor_id)
             if user is None or user.platform_role != "platform_admin":
                 raise PermissionError("platform administrator access required")
-            rows = session.scalars(
-                select(OutboxRecord)
-                .where(OutboxRecord.status == "DEAD",
-                       OutboxRecord.event_type == "GENERATION_REQUESTED")
-                .order_by(OutboxRecord.created_at.desc(), OutboxRecord.id.desc())
-                .limit(limit)
-            ).all()
-            return [{
+            cursor_key = self._decode_dead_outbox_cursor(cursor) if cursor is not None else None
+            statement = select(OutboxRecord).where(
+                OutboxRecord.status == "DEAD",
+                OutboxRecord.event_type == "GENERATION_REQUESTED",
+            )
+            if cursor_key is not None:
+                created_at, event_id = cursor_key
+                statement = statement.where(or_(
+                    OutboxRecord.created_at < created_at,
+                    and_(OutboxRecord.created_at == created_at, OutboxRecord.id < event_id),
+                ))
+            rows = session.scalars(statement.order_by(
+                OutboxRecord.created_at.desc(), OutboxRecord.id.desc()
+            ).limit(limit + 1)).all()
+            has_more = len(rows) > limit
+            items = rows[:limit]
+            next_cursor = self._encode_dead_outbox_cursor(items[-1]) if has_more and items else None
+            return {"items": [{
                 "id": row.id,
                 "aggregate_id": row.aggregate_id,
                 "event_type": row.event_type,
@@ -521,7 +531,33 @@ class GenerationRepository:
                 "last_error": row.last_error,
                 "created_at": row.created_at,
                 "available_at": row.available_at,
-            } for row in rows]
+            } for row in items], "next_cursor": next_cursor}
+
+    @staticmethod
+    def _encode_dead_outbox_cursor(row):
+        created_at = row.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        value = f"{created_at.astimezone(timezone.utc).isoformat()}\0{row.id}".encode("utf-8")
+        return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
+
+    @staticmethod
+    def _decode_dead_outbox_cursor(cursor):
+        try:
+            if not cursor or len(cursor) > 512:
+                raise ValueError("cursor length is invalid")
+            padded = cursor + "=" * (-len(cursor) % 4)
+            raw = base64.b64decode(padded, altchars=b"-_", validate=True).decode("utf-8")
+            raw_timestamp, raw_id = raw.split("\0", 1)
+            timestamp = datetime.fromisoformat(raw_timestamp)
+            if timestamp.tzinfo is None:
+                raise ValueError("cursor timestamp must include a timezone")
+            event_id = int(raw_id)
+            if event_id < 1:
+                raise ValueError("cursor event id must be positive")
+            return timestamp.astimezone(timezone.utc), event_id
+        except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
+            raise ValueError("Invalid generation outbox cursor") from exc
 
     def create_job(self, actor_id, project_id, *, requirement, model_name, now):
         with self.session_factory.begin() as session:

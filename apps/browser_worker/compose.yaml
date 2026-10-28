@@ -1,0 +1,53 @@
+services:
+  browser-worker:
+    build: .
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=1g,mode=1777
+    shm_size: 1gb
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${TESTPILOT_BROWSER_WORKER_MEMORY_LIMIT:-2g}
+    cpus: ${TESTPILOT_BROWSER_WORKER_CPU_LIMIT:-2.0}
+    pids_limit: ${TESTPILOT_BROWSER_WORKER_PIDS_LIMIT:-256}
+    expose:
+      - "9444"
+    dns:
+      - ${TESTPILOT_BROWSER_WORKER_DNS_SERVER:?set approved IPv4 DNS resolver}
+    environment:
+      TESTPILOT_WORKER_PORT: "9444"
+      TESTPILOT_WORKER_INSTANCE: ${TESTPILOT_WORKER_INSTANCE:?set unique Worker ID matching certificate CN}
+      TESTPILOT_WORKER_TLS_CERT: /run/testpilot/tls/worker.crt
+      TESTPILOT_WORKER_TLS_KEY: /run/testpilot/tls/worker.key
+      TESTPILOT_WORKER_CLIENT_CA_CERT: /run/testpilot/tls/gateway-client-ca.crt
+      TESTPILOT_WORKER_GATEWAY_URLS_JSON: ${TESTPILOT_WORKER_GATEWAY_URLS_JSON:?set JSON array of direct Gateway HTTPS origins}
+      TESTPILOT_WORKER_GATEWAY_CLIENT_CERT: /run/testpilot/tls/worker-client.crt
+      TESTPILOT_WORKER_GATEWAY_CLIENT_KEY: /run/testpilot/tls/worker-client.key
+      TESTPILOT_WORKER_GATEWAY_CA_CERT: /run/testpilot/tls/gateway-server-ca.crt
+      TESTPILOT_BROWSER_JOB_TOKEN_SECRET: ${TESTPILOT_BROWSER_JOB_TOKEN_SECRET:?set shared job-token secret}
+      TESTPILOT_BROWSER_MAX_SESSIONS: ${TESTPILOT_BROWSER_MAX_SESSIONS:-4}
+      TESTPILOT_BROWSER_SESSION_TTL_MS: ${TESTPILOT_BROWSER_SESSION_TTL_MS:-900000}
+      TESTPILOT_BROWSER_ACTION_TIMEOUT_MS: ${TESTPILOT_BROWSER_ACTION_TIMEOUT_MS:-30000}
+      TESTPILOT_BROWSER_WORKER_DNS_SERVER: ${TESTPILOT_BROWSER_WORKER_DNS_SERVER:?set approved IPv4 DNS resolver}
+    volumes:
+      - ${TESTPILOT_WORKER_TLS_CERT_FILE:?set Worker server certificate}:/run/testpilot/tls/worker.crt:ro
+      - ${TESTPILOT_WORKER_TLS_KEY_FILE:?set Worker server private key}:/run/testpilot/tls/worker.key:ro
+      - ${TESTPILOT_WORKER_GATEWAY_CLIENT_CA_FILE:?set Gateway client CA}:/run/testpilot/tls/gateway-client-ca.crt:ro
+      - ${TESTPILOT_WORKER_GATEWAY_CLIENT_CERT_FILE:?set Worker registration client certificate}:/run/testpilot/tls/worker-client.crt:ro
+      - ${TESTPILOT_WORKER_GATEWAY_CLIENT_KEY_FILE:?set Worker registration client key}:/run/testpilot/tls/worker-client.key:ro
+      - ${TESTPILOT_WORKER_GATEWAY_SERVER_CA_FILE:?set Gateway server CA}:/run/testpilot/tls/gateway-server-ca.crt:ro
+    networks:
+      - browser-worker-egress
+
+networks:
+  browser-worker-egress:
+    name: testpilot-browser-worker-egress
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: ${TESTPILOT_BROWSER_WORKER_EGRESS_SUBNET:-172.30.60.0/24}
