@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from apps.api.app.runs.recovery import RecoveryProposal
+
 
 class PlanProposal(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -37,6 +39,7 @@ class RunAgentProvider:
         )
         self.planner_model = base_model.with_structured_output(PlanProposal)
         self.explorer_model = base_model.with_structured_output(ExplorerProposal)
+        self.recovery_model = base_model.with_structured_output(RecoveryProposal)
 
     @classmethod
     def from_environment(cls):
@@ -72,3 +75,28 @@ class RunAgentProvider:
             }, ensure_ascii=False)),
         ])
         return proposal.model_dump()
+
+    def recover(self, state, case, failed_step, observation) -> RecoveryProposal:
+        """Suggest a locator for the failed published action, without editing its DSL."""
+        proposal = self.recovery_model.invoke([
+            ("system", "Propose only a replacement locator for the one supplied failed action. "
+             "Return its exact action_id, a DSL v2 locator, source, confidence from 0 to 1, "
+             "and a semantic_descriptor copied from the observed target. Never change the "
+             "action, its value, action order, or any assertion. The deterministic Worker "
+             "verification and a separate human approval remain mandatory; confidence "
+             "does not authorize a replay."),
+            ("human", json.dumps({
+                "schema_version": case.get("schema_version"),
+                "budget_left": state.get("budget_left", 0),
+                "failed_action": {
+                    "action_id": str(failed_step["action_id"]),
+                    "action": failed_step.get("action"),
+                    "locator": failed_step.get("locator"),
+                },
+                "page_observation": observation,
+            }, ensure_ascii=False)),
+        ])
+        result = RecoveryProposal.model_validate(proposal)
+        if str(result.action_id) != str(failed_step["action_id"]):
+            raise ValueError("Recovery proposal must target the failed published action")
+        return result
