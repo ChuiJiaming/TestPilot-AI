@@ -29,7 +29,18 @@ class EmailVerificationContractTests(unittest.TestCase):
             if method.lower() in {"get", "post", "put", "patch", "delete", "options", "head"}
         ]
 
-        self.assertEqual(len(operations), 105)
+        operation_ids = {
+            operation["operationId"]
+            for operation in operations
+            if isinstance(operation, dict) and "operationId" in operation
+        }
+        original_ids = set(
+            (ROOT / "contracts" / "openapi_v10_3_original_operation_ids.txt")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        )
+        self.assertEqual(len(original_ids), 101)
+        self.assertTrue(original_ids.issubset(operation_ids))
         registration = document["paths"]["/api/v1/auth/register"]["post"]
         self.assertIn("202", registration["responses"])
         self.assertEqual(

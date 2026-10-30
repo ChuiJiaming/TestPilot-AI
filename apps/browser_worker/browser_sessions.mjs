@@ -99,15 +99,15 @@ function normalizeDomain(value) {
   return ascii;
 }
 
-function publicAddress(address) {
+export function publicAddress(address) {
   try { return ipaddr.process(address).range() === "unicast"; }
   catch { return false; }
 }
 
-async function resolvePinned(hostname) {
+export async function resolvePinned(hostname, resolver = resolveWorkerHostname) {
   let timer;
   const answers = await Promise.race([
-    resolveWorkerHostname(hostname),
+    resolver(hostname),
     new Promise((_, reject) => {
       timer = setTimeout(() => reject(Object.assign(new Error("DNS_TIMEOUT"), { code: "DNS_TIMEOUT" })), 3000);
     }),
@@ -118,7 +118,7 @@ async function resolvePinned(hostname) {
   return answers[0];
 }
 
-async function assertTarget(rawUrl, claims) {
+export async function assertTarget(rawUrl, claims) {
   let target;
   try { target = new URL(rawUrl); }
   catch { throw Object.assign(new Error("INVALID_TARGET_URL"), { code: "INVALID_TARGET_URL" }); }

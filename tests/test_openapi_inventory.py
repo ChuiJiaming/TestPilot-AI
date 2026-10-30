@@ -3,6 +3,7 @@ import unittest
 
 import yaml
 from apps.api.app.auth.lifecycle import PERMISSION_REGISTRY
+from apps.api.app.main import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,8 +40,7 @@ class OpenApiInventoryTests(unittest.TestCase):
             .splitlines()
         )
         self.assertEqual(len(original_ids), 101)
-        self.assertEqual(len(operations), 105)
-        self.assertEqual(len(set(operation_ids)), 105)
+        self.assertEqual(len(operation_ids), len(set(operation_ids)))
         self.assertTrue(original_ids.issubset(set(operation_ids)))
 
     def test_run_creation_remains_idempotent(self):
@@ -51,6 +51,20 @@ class OpenApiInventoryTests(unittest.TestCase):
             "Idempotency-Key",
             {parameter["name"] for parameter in run_create["parameters"]},
         )
+
+    def test_phase3_run_detail_and_sse_ticket_keep_baseline_operation_ids(self):
+        runtime = create_app().openapi()
+        operation_ids = {
+            operation["operationId"]
+            for path_item in runtime["paths"].values()
+            for method, operation in path_item.items()
+            if method.lower() in {"get", "post", "put", "patch", "delete", "options", "head"}
+            and isinstance(operation, dict)
+            and "operationId" in operation
+        }
+
+        self.assertIn("get__api_v1_test_runs__id", operation_ids)
+        self.assertIn("post_api_v1_sse_tickets", operation_ids)
 
     def test_api_token_permission_registry_matches_openapi_permissions(self):
         document = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))

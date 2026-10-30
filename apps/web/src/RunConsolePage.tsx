@@ -291,7 +291,6 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
   }, [accessToken, loadApprovals, loadHealing, loadRun, loadSteps, selectedId]);
 
   const selectedPlan = useMemo(() => plans.find((item) => item.id === planId), [planId, plans]);
-  const selectedEnvironment = useMemo(() => environments.find((item) => item.id === environmentId), [environmentId, environments]);
 
   async function createRun(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

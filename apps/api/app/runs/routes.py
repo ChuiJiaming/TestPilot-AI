@@ -234,7 +234,7 @@ def create_run_router(*, repository: RunRepository | None,
         except (RunCreationBlocked, RunScopeDenied) as exc:
             map_repo_error(exc)
 
-    @router.get("/test-runs/{id}", operation_id="get_api_v1_test_runs_id",
+    @router.get("/test-runs/{id}", operation_id="get__api_v1_test_runs__id",
                 responses={404: {"model": ProblemDetails}})
     def get_run(id: UUID, credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
         actor_id, _ = run_actor(credentials, id, "run:read")
@@ -436,7 +436,7 @@ def create_run_router(*, repository: RunRepository | None,
             raise HTTPException(status_code=404, detail="Run not found")
         return result
 
-    @router.post("/sse-tickets", operation_id="post__api_v1_sse_tickets",
+    @router.post("/sse-tickets", operation_id="post_api_v1_sse_tickets",
                  responses={403: {"model": ProblemDetails}, 404: {"model": ProblemDetails}})
     def create_sse_ticket(payload: SseTicketRequest, request: Request, response: Response,
                            credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):

@@ -2290,12 +2290,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-        '202':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/GenerationJob'
       parameters:
       - in: path
         name: id
