@@ -19,6 +19,16 @@ type Environment = { id: string; name: string };
 type StepItem = { id: string; run_case_id: string; action_id: string; sequence: number; action_type: string; status: string; replay_policy: string; browser: string | null; started_at: string | null; finished_at: string | null };
 type RunEvent = { id: number; event_type: string; timestamp: string; payload: Record<string, unknown> };
 type ApprovalItem = { id: string; project_id: string; target_kind: string; target_id: string; status: "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "CANCELLED"; requested_by: string | null; kind: string | null; expires_at: string | null };
+type HealingReview = {
+  id: string; run_id: string; run_case_id: string; step_id: string; action_id: string;
+  sequence: number; action_type: string; browser: string;
+  old_locator: Record<string, unknown>; new_locator: Record<string, unknown>;
+  source: string | null; confidence: number; evidence: Record<string, unknown>;
+  status: string; expires_at: string | null; new_version_id: string | null;
+  applied_at: string | null;
+  approval: { id: string; status: string; requested_by: string | null;
+    decided_by: string | null; reason: string | null; expires_at: string | null };
+};
 
 const terminalStatuses = new Set<RunStatus>(["PASSED", "FAILED", "ERROR", "CANCELLED"]);
 const statusLabels: Record<RunStatus, string> = {
@@ -31,8 +41,37 @@ const eventTypes = [
   "run.queued", "run.started", "run.status_changed", "run.finished",
   "run.case_status_changed", "run.step_started", "run.step_finished",
   "run.lease_recovered", "run.manual_reconciliation_required", "run.waiting_approval",
-  "approval.requested", "approval.decided", "run.step_reconciled", "run.resume_claimed",
+  "run.healing_requested", "approval.requested", "approval.decided",
+  "run.step_reconciled", "run.resume_claimed",
 ];
+
+function locatorSummary(locator: Record<string, unknown>) {
+  return Object.entries(locator).map(([key, value]) => {
+    const display = typeof value === "string" ? value : JSON.stringify(value);
+    return `${key}: ${display ?? ""}`;
+  }).join(" · ");
+}
+
+function descriptorSummary(evidence: Record<string, unknown>) {
+  const verification = evidence.verification as { descriptor?: Record<string, unknown> } | undefined;
+  const descriptor = verification?.descriptor
+    ?? evidence.semantic_descriptor as Record<string, unknown> | undefined;
+  if (!descriptor) return "未返回目标描述";
+  const parts = [
+    typeof descriptor.role === "string" ? descriptor.role : null,
+    typeof descriptor.name === "string" ? `“${descriptor.name}”` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(" · ") : JSON.stringify(descriptor);
+}
+
+function healingStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    PENDING_APPROVAL: "待人工审核", APPROVED: "已批准，等待重放",
+    REJECTED: "已拒绝", EXPIRED: "已过期", APPLIED: "恢复已完成",
+    CANCELLED: "恢复已取消",
+  };
+  return labels[status] ?? status;
+}
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "请求失败，请稍后重试。";
@@ -46,6 +85,11 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
   const [selectedRun, setSelectedRun] = useState<RunItem | null>(null);
   const [steps, setSteps] = useState<StepItem[]>([]);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
+  const [healingId, setHealingId] = useState("");
+  const [healingReview, setHealingReview] = useState<HealingReview | null>(null);
+  const [healingLoading, setHealingLoading] = useState(false);
+  const [healingLoadError, setHealingLoadError] = useState("");
+  const [healingReason, setHealingReason] = useState("");
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [cursor, setCursor] = useState(0);
   const [connection, setConnection] = useState<"idle" | "connecting" | "live" | "reconnecting" | "closed">("idle");
@@ -58,6 +102,7 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
   const [notice, setNotice] = useState("");
   const sourceRef = useRef<EventSource | null>(null);
   const cursorRef = useRef(0);
+  const healingRequestRef = useRef(0);
 
   const loadRuns = useCallback(async () => {
     if (!project) { setRuns([]); setSelectedId(""); return; }
@@ -99,6 +144,24 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
     setApprovals(value.items);
   }, [accessToken]);
 
+  const loadHealing = useCallback(async (id: string) => {
+    const requestId = ++healingRequestRef.current;
+    setHealingId(id);
+    setHealingReview(null);
+    setHealingLoading(true);
+    setHealingLoadError("");
+    try {
+      const value = await api<HealingReview>("/api/v1/healing-records/" + id, {}, accessToken);
+      if (requestId === healingRequestRef.current) setHealingReview(value);
+      return value;
+    } catch (caught) {
+      if (requestId === healingRequestRef.current) setHealingLoadError(messageOf(caught));
+      throw caught;
+    } finally {
+      if (requestId === healingRequestRef.current) setHealingLoading(false);
+    }
+  }, [accessToken]);
+
   useEffect(() => {
     let active = true;
     setError("");
@@ -110,6 +173,12 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
 
   useEffect(() => {
     cursorRef.current = 0;
+    healingRequestRef.current += 1;
+    setHealingId("");
+    setHealingReview(null);
+    setHealingLoading(false);
+    setHealingLoadError("");
+    setHealingReason("");
     setCursor(0);
     setEvents([]);
     if (!selectedId) {
@@ -148,8 +217,13 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
           if (!Number.isFinite(eventId) || eventId <= cursorRef.current) return;
           cursorRef.current = eventId;
           setCursor(eventId);
+          let requestedHealingId: string | null = null;
           try {
             const envelope = JSON.parse(event.data) as { event_type: string; timestamp: string; payload: Record<string, unknown> };
+            if (envelope.event_type === "run.healing_requested"
+                && typeof envelope.payload.healing_id === "string") {
+              requestedHealingId = envelope.payload.healing_id;
+            }
             setEvents((items) => [{
               id: eventId, event_type: envelope.event_type,
               timestamp: envelope.timestamp, payload: envelope.payload,
@@ -158,6 +232,9 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
             setEvents((items) => [{
               id: eventId, event_type: "run.event", timestamp: new Date().toISOString(), payload: {},
             }, ...items].slice(0, 100));
+          }
+          if (requestedHealingId) {
+            void loadHealing(requestedHealingId).catch(() => undefined);
           }
           void Promise.all([loadRun(selectedId), loadSteps(selectedId), loadApprovals(selectedId)]).then(([currentRun]) => {
             if (terminalStatuses.has(currentRun.status)) {
@@ -201,7 +278,7 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
       currentSource?.close();
       sourceRef.current = null;
     };
-  }, [accessToken, loadApprovals, loadRun, loadSteps, selectedId]);
+  }, [accessToken, loadApprovals, loadHealing, loadRun, loadSteps, selectedId]);
 
   const selectedPlan = useMemo(() => plans.find((item) => item.id === planId), [planId, plans]);
   const selectedEnvironment = useMemo(() => environments.find((item) => item.id === environmentId), [environmentId, environments]);
@@ -269,7 +346,40 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
     } finally { setBusy(false); }
   }
 
+  async function decideHealing(decision: "APPROVE" | "REJECT") {
+    if (!selectedRun || !healingReview || !healingCanBeDecided) return;
+    const reason = healingReason.trim();
+    if (!reason) { setError("请填写本次定位器恢复决策说明。"); return; }
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const updated = await api<HealingReview>(
+        "/api/v1/healing-records/" + healingReview.id + "/decision",
+        jsonBody({ decision, reason }), accessToken,
+      );
+      setHealingReview(updated);
+      setHealingReason("");
+      await Promise.all([loadRun(selectedRun.id), loadRuns(), loadSteps(selectedRun.id)]);
+      setNotice(decision === "APPROVE"
+        ? "定位器恢复已批准。Run 会重放失败动作并重新执行原断言。"
+        : "定位器恢复已拒绝。Run 已结束，不会重放失败动作。");
+    } catch (caught) {
+      setError(messageOf(caught));
+      if (caught instanceof ApiError && caught.status === 409) {
+        await Promise.allSettled([
+          loadHealing(healingReview.id), loadRun(selectedRun.id),
+          loadSteps(selectedRun.id), loadRuns(),
+        ]);
+        setNotice("审批状态已变化，最新结果已重新载入。");
+      }
+    } finally { setBusy(false); }
+  }
+
   const pendingApprovals = approvals.filter((approval) => approval.status === "PENDING");
+  const healingCanBeDecided = Boolean(
+    selectedRun?.status === "WAITING_APPROVAL"
+    && healingReview?.status === "PENDING_APPROVAL"
+    && healingReview.approval.status === "PENDING",
+  );
 
   if (!project) return <Card><CardTitle>运行控制台</CardTitle><p className="run-muted">先选择项目，再查看 Run。</p></Card>;
 
@@ -338,6 +448,60 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
           </div>)}
           {pendingApprovals.length === 0 && <small>未找到待审批记录，请刷新 Run 状态。</small>}
         </>}
+        {healingId && <section className="run-healing-review" aria-labelledby="run-healing-title" aria-busy={healingLoading}>
+          <div className="run-healing-heading">
+            <h3 id="run-healing-title">定位器恢复审阅</h3>
+            <span className={"run-healing-status status-" + (healingReview?.status ?? "loading").toLowerCase()}>
+              {healingReview ? healingStatusLabel(healingReview.status) : healingLoading ? "正在载入" : "需要刷新"}
+            </span>
+          </div>
+          {healingLoading && !healingReview && <p className="run-muted">正在载入定位器候选和验证证据…</p>}
+          {healingLoadError && <div className="run-healing-load-error" role="alert">
+            <span>{healingLoadError}</span>
+            <Button type="button" variant="secondary" disabled={healingLoading}
+              onClick={() => void loadHealing(healingId).catch(() => undefined)}>重新载入</Button>
+          </div>}
+          {healingReview && <>
+            <p className="run-healing-action">第 {healingReview.sequence} 步 · {healingReview.action_type} · {healingReview.browser}</p>
+            <dl className="run-healing-locators">
+              <div><dt>原定位器</dt><dd><code>{locatorSummary(healingReview.old_locator)}</code></dd></div>
+              <div><dt>候选定位器</dt><dd><code>{locatorSummary(healingReview.new_locator)}</code></dd></div>
+            </dl>
+            <div className="run-healing-meta">
+              <div><span>核实目标</span><strong>{descriptorSummary(healingReview.evidence)}</strong></div>
+              <div><span>来源 · 置信度</span><strong>{healingReview.source ?? "未知"} · {Math.round(healingReview.confidence * 100)}%</strong></div>
+              <div><span>审批截止</span><strong>{healingReview.expires_at
+                ? new Date(healingReview.expires_at).toLocaleString()
+                : "无过期时间"}</strong></div>
+            </div>
+            <details className="run-healing-evidence">
+              <summary>查看验证证据</summary>
+              <pre>{JSON.stringify(healingReview.evidence, null, 2)}</pre>
+            </details>
+            {healingCanBeDecided ? <>
+              <div className="run-manual-notice"><AlertCircle size={16} />批准后最多重放本次失败动作一次，并重新执行原始断言。每个候选都需要单独人工批准。</div>
+              <div className="run-healing-decision">
+                <Label htmlFor="run-healing-reason">决策说明（必填）</Label>
+                <Input id="run-healing-reason" value={healingReason} required maxLength={2000}
+                  onChange={(event) => setHealingReason(event.target.value)} />
+                <div className="run-controls">
+                  <Button type="button" variant="secondary"
+                    disabled={busy || healingLoading || !healingReason.trim()}
+                    onClick={() => void decideHealing("APPROVE")}>批准并继续</Button>
+                  <Button type="button" variant="danger"
+                    disabled={busy || healingLoading || !healingReason.trim()}
+                    onClick={() => void decideHealing("REJECT")}>拒绝恢复</Button>
+                </div>
+              </div>
+            </> : <p className="run-healing-terminal">{healingReview.approval.reason
+              ? `决策说明：${healingReview.approval.reason}`
+              : "此恢复方案已结束，不能再次决策。"}</p>}
+            {!healingCanBeDecided && <div className="run-controls" aria-label="恢复决策已结束">
+              <Button type="button" variant="secondary" disabled>批准并继续</Button>
+              <Button type="button" variant="danger" disabled>拒绝恢复</Button>
+            </div>}
+          </>}
+        </section>}
       </Card>
 
       <Card className="run-steps-card">

@@ -178,6 +178,111 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+.run-healing-review {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.run-healing-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.run-healing-heading h3 {
+  margin: 0;
+  color: #243149;
+  font-size: 14px;
+  font-weight: 650;
+}
+.run-healing-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: 5px 9px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.run-healing-status.status-pending_approval,
+.run-healing-status.status-loading { color: #956317; background: rgba(212, 147, 40, 0.1); }
+.run-healing-status.status-approved,
+.run-healing-status.status-applied { color: #168260; background: rgba(24, 167, 122, 0.1); }
+.run-healing-status.status-rejected,
+.run-healing-status.status-expired,
+.run-healing-status.status-cancelled { color: #b74439; background: rgba(220, 89, 98, 0.1); }
+.run-healing-action, .run-healing-terminal {
+  margin: 0;
+  color: #39465c;
+  font-size: 12px;
+  font-weight: 600;
+}
+.run-healing-locators {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.run-healing-locators > div, .run-healing-meta > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.run-healing-locators dt, .run-healing-meta span {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.run-healing-locators dd { margin: 0; }
+.run-healing-locators code {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #39465c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.run-healing-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.run-healing-meta strong {
+  color: #39465c;
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.run-healing-evidence summary {
+  width: fit-content;
+  color: #46536a;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+.run-healing-evidence pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 9px 0 0;
+  border-radius: 8px;
+  background: var(--muted);
+  padding: 11px;
+  color: #39465c;
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.run-healing-load-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #b74439;
+  font-size: 12px;
+}
+.run-healing-decision { display: grid; gap: 8px; }
+.run-healing-terminal { color: var(--muted-foreground); font-weight: 400; }
 .run-step-count, .run-events-card .run-card-heading > small {
   color: var(--muted-foreground);
   font-size: 11px;
@@ -237,4 +342,5 @@
   .run-step-row { grid-template-columns: 76px minmax(0, 1fr) 24px; }
   .run-step-browser { display: none; }
   .run-detail-heading { align-items: flex-start; flex-direction: column; }
+  .run-healing-locators, .run-healing-meta { grid-template-columns: 1fr; }
 }
