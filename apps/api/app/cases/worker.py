@@ -62,6 +62,10 @@ def create_celery_app() -> Celery:
                 "task": "testpilot.expire_run_approvals",
                 "schedule": 60.0,
             },
+            "expire-healing-approvals": {
+                "task": "testpilot.expire_healing_approvals",
+                "schedule": 60.0,
+            },
             "dispatch-verification-email-outbox": {
                 "task": "testpilot.dispatch_verification_email_outbox",
                 "schedule": 5.0,
@@ -276,6 +280,15 @@ def expire_run_approvals():
 
     repository = RunRepository(session_factory())
     return repository.expire_due_run_approvals(now=datetime.now(timezone.utc), limit=100)
+
+
+@celery_app.task(name="testpilot.expire_healing_approvals")
+def expire_healing_approvals():
+    from apps.api.app.runs.repository import RunRepository
+
+    repository = RunRepository(session_factory())
+    return repository.expire_due_healing_approvals(
+        now=datetime.now(timezone.utc), limit=100)
 
 
 @celery_app.task(name="testpilot.execute_admitted_run")

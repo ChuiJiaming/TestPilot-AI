@@ -75,6 +75,8 @@
 
 **Verification:** `python -m pytest tests/agent/recovery tests/api/defects tests/visual -q`; `pnpm exec playwright test tests/e2e/healing-visual`.
 
+**Status (2026-10-30):** M10 source implementation is present across the scoped review/decision API, Worker locator verification and session rebind, Run failure recovery and original-assertion checks, and the per-candidate Run Console review. All candidates require human approval before bounded replay; each replay is limited to one failed action and original assertions run again. Q-010 is resolved: `APPROVE`/`REJECT` is the public decision, and `APPLIED` is internal after replay and assertions succeed. M11–M12 remain open, so Phase 4 is not complete. Screenshot artifact storage remains open. Migrations 014–015, PostgreSQL locking/upgrade behavior, and real mTLS Worker/egress acceptance still require a Docker-backed run; Phase 1–3 integrated acceptance remains partial and this does not mark Phase 3 production-ready.
+
 ## Phase 5 — Reporting and integrations, M13–M15
 
 **Deliver:** report snapshots and HTML/PDF/JSON/JUnit export; CI and signed Webhook processing; notifications, quota reservation/settlement, audit chain, usage and operations screens.

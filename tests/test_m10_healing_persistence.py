@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from importlib import import_module
 from itertools import count
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
@@ -359,7 +360,7 @@ def test_rejection_fails_run_without_enqueuing_replay(db):
             OutboxRecord.event_type == "RUN_RESUME_REQUESTED",
         )).all() == []
 
-def test_due_expiry_is_atomic_idempotent_and_does_not_resume(db):
+def test_due_healing_approval_expiry_is_atomic_and_never_resumes(db):
     request = _propose(db)
     expired_at = request["expires_at"] + timedelta(seconds=1)
 
@@ -375,6 +376,32 @@ def test_due_expiry_is_atomic_idempotent_and_does_not_resume(db):
         assert session.scalars(select(OutboxRecord).where(
             OutboxRecord.event_type == "RUN_RESUME_REQUESTED",
         )).all() == []
+
+
+def test_due_healing_approval_expiry_worker_is_scheduled_and_bounded(monkeypatch):
+    monkeypatch.setenv("TESTPILOT_CELERY_BROKER_URL", "memory://")
+    worker = import_module("apps.api.app.cases.worker")
+    repository_module = import_module("apps.api.app.runs.repository")
+    calls = []
+
+    class RepositoryStub:
+        def __init__(self, sessions):
+            assert sessions == "test-sessions"
+
+        def expire_due_healing_approvals(self, *, now, limit):
+            calls.append({"now": now, "limit": limit})
+            return 3
+
+    monkeypatch.setattr(worker, "session_factory", lambda: "test-sessions")
+    monkeypatch.setattr(repository_module, "RunRepository", RepositoryStub)
+
+    assert worker.celery_app.conf.beat_schedule["expire-healing-approvals"] == {
+        "task": "testpilot.expire_healing_approvals", "schedule": 60.0,
+    }
+    assert worker.expire_healing_approvals() == 3
+    assert len(calls) == 1
+    assert calls[0]["limit"] == 100
+    assert calls[0]["now"].tzinfo is not None
 
 
 def test_completion_creates_pending_immutable_case_version_for_original_requester(db):
