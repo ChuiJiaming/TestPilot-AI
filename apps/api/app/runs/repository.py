@@ -1059,6 +1059,16 @@ class RunRepository:
             return {"healing_id": healing.id, "approval_id": approval.id,
                     "expires_at": expires_at}
 
+    def project_id_for_healing(self, healing_id: UUID):
+        with self.session_factory() as session:
+            return session.scalar(
+                select(TestRunRecord.project_id)
+                .join(RunCaseRecord, RunCaseRecord.run_id == TestRunRecord.id)
+                .join(TestStepRecord, TestStepRecord.run_case_id == RunCaseRecord.id)
+                .join(HealingRecord, HealingRecord.step_id == TestStepRecord.id)
+                .where(HealingRecord.id == healing_id)
+            )
+
     def get_healing(self, actor_id: UUID, healing_id: UUID) -> dict | None:
         with self.session_factory() as session:
             healing = session.get(HealingRecord, healing_id)

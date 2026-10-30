@@ -8429,7 +8429,12 @@ paths:
       operationId: get_api_v1_healing_records_healing_id
       summary: Get healing proposal
       responses:
-        '200': *id006
+        '200':
+          description: Healing proposal and bounded review evidence
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealingRecord'
         '401': *id001
         '403': *id002
         '404': *id003
@@ -12007,16 +12012,98 @@ components:
       additionalProperties: false
       properties:
         id: *id005
+        run_id: *id005
+        run_case_id: *id005
         step_id: *id005
+        action_id: *id005
+        sequence:
+          type: integer
+          minimum: 1
+        action_type:
+          type: string
+        browser:
+          type: string
+          enum:
+          - chromium
+          - firefox
+          - webkit
         old_locator: *id011
         new_locator: *id011
+        source:
+          type: string
+          nullable: true
         confidence:
           type: number
           minimum: 0
           maximum: 1
+        evidence:
+          type: object
+          additionalProperties: true
         status: *id010
+        approval:
+          type: object
+          additionalProperties: false
+          properties:
+            id: *id005
+            status:
+              type: string
+            requested_by:
+              type: string
+              format: uuid
+              nullable: true
+            decided_by:
+              type: string
+              format: uuid
+              nullable: true
+            reason:
+              type: string
+              nullable: true
+            expires_at:
+              type: string
+              format: date-time
+              nullable: true
+          required:
+          - id
+          - status
+          - requested_by
+          - decided_by
+          - reason
+          - expires_at
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        new_version_id:
+          type: string
+          format: uuid
+          nullable: true
+        applied_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
       required:
       - id
+      - run_id
+      - run_case_id
+      - step_id
+      - action_id
+      - sequence
+      - action_type
+      - browser
+      - old_locator
+      - new_locator
+      - source
+      - confidence
+      - evidence
+      - status
+      - approval
+      - expires_at
+      - new_version_id
+      - applied_at
+      - created_at
     VisualBaseline:
       type: object
       additionalProperties: false
@@ -12760,7 +12847,10 @@ components:
           enum:
           - APPROVE
           - REJECT
-        reason: *id010
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 2000
       required:
       - decision
       - reason

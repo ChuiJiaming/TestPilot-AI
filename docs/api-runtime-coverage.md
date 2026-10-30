@@ -8,8 +8,8 @@
 
 - Baseline operations: **101**
 - Candidate operations: **105** (baseline plus 4 additive operations)
-- Baseline operations with a runtime route registered: **36/101**
-- Baseline operations without a runtime route: **65**
+- Baseline operations with a runtime route registered: **38/101**
+- Baseline operations without a runtime route: **63**
 - Additive operations with a runtime route registered: **4/4**
 
 Data entities, frontend entry points, and acceptance-test groups remain mapped at module level in [the traceability matrix](traceability-matrix.md). This report does not invent one-to-one field mappings where V10.3 does not define them.
@@ -58,7 +58,7 @@ Data entities, frontend entry points, and acceptance-test groups remain mapped a
 | Yes | GET | `/api/v1/test-runs/{id}/steps` | `get__api_v1_test_runs__id__steps` | Runs & Approvals | Missing | — |
 | Yes | GET | `/api/v1/visual-diffs/{id}` | `get__api_v1_visual_diffs__id` | Reports & Defects | Missing | — |
 | Yes | GET | `/api/v1/environments/{id}/snapshots` | `get_api_v1_environments_id_snapshots` | V10 corrections | Registered | test_environment_snapshot_routes.py |
-| Yes | GET | `/api/v1/healing-records/{healing_id}` | `get_api_v1_healing_records_healing_id` | (untagged) | Missing | — |
+| Yes | GET | `/api/v1/healing-records/{healing_id}` | `get_api_v1_healing_records_healing_id` | (untagged) | Registered | test_m10_healing_routes.py |
 | Yes | GET | `/api/v1/health/ready` | `get_api_v1_health_ready` | (untagged) | Missing | — |
 | Yes | GET | `/api/v1/projects/{id}/test-cases/{case_id}/versions/{version_id}/diff` | `get_api_v1_projects_id_test_cases_case_id_versions_version_id_diff` | V10 corrections | Missing | — |
 | Yes | GET | `/api/v1/visual-diffs` | `get_api_v1_visual_diffs` | (untagged) | Missing | — |
@@ -77,7 +77,7 @@ Data entities, frontend entry points, and acceptance-test groups remain mapped a
 | Additive | POST | `/api/v1/auth/verification/resend` | `post__api_v1_auth_verification_resend` | Auth & Orgs | Registered | test_auth_routes.py |
 | Additive | POST | `/api/v1/auth/verify-email` | `post__api_v1_auth_verify_email` | Auth & Orgs | Registered | test_auth_routes.py |
 | Yes | POST | `/api/v1/environments/{id}/health-check` | `post__api_v1_environments__id__health_check` | Projects & Environments | Missing | — |
-| Yes | POST | `/api/v1/healing-records/{id}/decision` | `post__api_v1_healing_records__id__decision` | Reports & Defects | Missing | — |
+| Yes | POST | `/api/v1/healing-records/{id}/decision` | `post__api_v1_healing_records__id__decision` | Reports & Defects | Registered | test_m10_healing_routes.py |
 | Yes | POST | `/api/v1/integrations/{id}/test` | `post__api_v1_integrations__id__test` | Integrations & Operations | Missing | — |
 | Yes | POST | `/api/v1/invitations/accept` | `post__api_v1_invitations_accept` | Auth & Orgs | Registered | — |
 | Yes | POST | `/api/v1/notifications/{id}/read` | `post__api_v1_notifications__id__read` | Integrations & Operations | Missing | — |

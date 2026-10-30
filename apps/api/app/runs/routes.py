@@ -70,7 +70,45 @@ class ApprovalView(BaseModel):
 class ApprovalDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: Literal["APPROVE", "REJECT"]
-    reason: str
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_must_not_be_blank(cls, value):
+        if not value.strip():
+            raise ValueError("reason must not be blank")
+        return value
+
+
+class HealingApprovalView(BaseModel):
+    id: UUID
+    status: str
+    requested_by: UUID | None
+    decided_by: UUID | None
+    reason: str | None
+    expires_at: datetime | None
+
+
+class HealingRecordView(BaseModel):
+    id: UUID
+    run_id: UUID
+    run_case_id: UUID
+    step_id: UUID
+    action_id: UUID
+    sequence: int
+    action_type: str
+    browser: Literal["chromium", "firefox", "webkit"]
+    old_locator: dict
+    new_locator: dict
+    source: str | None
+    confidence: float = Field(ge=0, le=1)
+    evidence: dict
+    status: str
+    approval: HealingApprovalView
+    expires_at: datetime | None
+    new_version_id: UUID | None
+    applied_at: datetime | None
+    created_at: datetime
 
 
 class ApprovalPage(BaseModel):
@@ -130,6 +168,14 @@ def create_run_router(*, repository: RunRepository | None,
         if context is None:
             raise HTTPException(status_code=404, detail="Approval not found")
         return context
+
+    def project_for_healing(healing_id):
+        if repository is None or auth_sessions is None:
+            raise HTTPException(status_code=503, detail="Healing service is not configured")
+        project_id = repository.project_id_for_healing(healing_id)
+        if project_id is None:
+            raise HTTPException(status_code=404, detail="Healing record not found")
+        return project_id
 
     def run_actor(credentials, run_id, permission):
         project_id = project_for_run(run_id)
@@ -266,6 +312,65 @@ def create_run_router(*, repository: RunRepository | None,
             raise HTTPException(status_code=404, detail="Approval not found") from exc
         except CasePermissionDenied as exc:
             raise HTTPException(status_code=403, detail="Project approval permission denied") from exc
+
+    @router.get(
+        "/healing-records/{healing_id}",
+        response_model=HealingRecordView,
+        operation_id="get_api_v1_healing_records_healing_id",
+        responses={403: {"model": ProblemDetails}, 404: {"model": ProblemDetails}},
+    )
+    def get_healing(
+        healing_id: UUID,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        project_id = project_for_healing(healing_id)
+        actor_id = actor(credentials, project_id=project_id, permission="resource:read")
+        try:
+            value = repository.get_healing(actor_id, healing_id)
+        except RunScopeDenied as exc:
+            raise HTTPException(status_code=404, detail="Healing record not found") from exc
+        if value is None:
+            raise HTTPException(status_code=404, detail="Healing record not found")
+        return value
+
+    @router.post(
+        "/healing-records/{id}/decision",
+        response_model=HealingRecordView,
+        operation_id="post__api_v1_healing_records__id__decision",
+        responses={403: {"model": ProblemDetails}, 404: {"model": ProblemDetails},
+                   409: {"model": ProblemDetails}},
+    )
+    def decide_healing(
+        id: UUID,
+        payload: ApprovalDecision,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        project_id = project_for_healing(id)
+        actor_id = actor(credentials, project_id=project_id, permission="approval:decide")
+        try:
+            repository.authorize_approval_project(actor_id, project_id)
+            result = repository.decide_healing(
+                actor_id, id, decision=payload.decision, reason=payload.reason,
+                now=datetime.now(timezone.utc),
+            )
+        except RunApprovalPermissionDenied as exc:
+            raise HTTPException(
+                status_code=403,
+                detail="Approval requester cannot decide their own request",
+            ) from exc
+        except RunApprovalConflict as exc:
+            raise HTTPException(status_code=409, detail="Healing state conflict") from exc
+        except RunScopeDenied as exc:
+            raise HTTPException(status_code=404, detail="Healing record not found") from exc
+        if result.get("expired"):
+            raise HTTPException(status_code=409, detail="Healing approval expired")
+        try:
+            value = repository.get_healing(actor_id, id)
+        except RunScopeDenied as exc:
+            raise HTTPException(status_code=404, detail="Healing record not found") from exc
+        if value is None:
+            raise HTTPException(status_code=404, detail="Healing record not found")
+        return value
 
     @router.get("/projects/{id}/test-runs",
                 operation_id="get__api_v1_projects__id__test_runs")
