@@ -41,7 +41,8 @@ const eventTypes = [
   "run.queued", "run.started", "run.status_changed", "run.finished",
   "run.case_status_changed", "run.step_started", "run.step_finished",
   "run.lease_recovered", "run.manual_reconciliation_required", "run.waiting_approval",
-  "run.healing_requested", "approval.requested", "approval.decided",
+  "run.healing_requested", "healing.applied",
+  "approval.requested", "approval.decided",
   "run.step_reconciled", "run.resume_claimed",
 ];
 
@@ -103,6 +104,7 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
   const sourceRef = useRef<EventSource | null>(null);
   const cursorRef = useRef(0);
   const healingRequestRef = useRef(0);
+  const healingIdRef = useRef("");
 
   const loadRuns = useCallback(async () => {
     if (!project) { setRuns([]); setSelectedId(""); return; }
@@ -146,6 +148,7 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
 
   const loadHealing = useCallback(async (id: string) => {
     const requestId = ++healingRequestRef.current;
+    healingIdRef.current = id;
     setHealingId(id);
     setHealingReview(null);
     setHealingLoading(true);
@@ -174,6 +177,7 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
   useEffect(() => {
     cursorRef.current = 0;
     healingRequestRef.current += 1;
+    healingIdRef.current = "";
     setHealingId("");
     setHealingReview(null);
     setHealingLoading(false);
@@ -217,12 +221,18 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
           if (!Number.isFinite(eventId) || eventId <= cursorRef.current) return;
           cursorRef.current = eventId;
           setCursor(eventId);
-          let requestedHealingId: string | null = null;
+          let healingEventId: string | null = null;
+          let opensHealingReview = false;
           try {
             const envelope = JSON.parse(event.data) as { event_type: string; timestamp: string; payload: Record<string, unknown> };
-            if (envelope.event_type === "run.healing_requested"
-                && typeof envelope.payload.healing_id === "string") {
-              requestedHealingId = envelope.payload.healing_id;
+            if (typeof envelope.payload.healing_id === "string"
+                && ["run.healing_requested", "healing.applied"].includes(envelope.event_type)) {
+              healingEventId = envelope.payload.healing_id;
+              opensHealingReview = envelope.event_type === "run.healing_requested";
+            } else if (envelope.event_type === "approval.decided"
+                && envelope.payload.target_kind === "healing"
+                && typeof envelope.payload.target_id === "string") {
+              healingEventId = envelope.payload.target_id;
             }
             setEvents((items) => [{
               id: eventId, event_type: envelope.event_type,
@@ -233,8 +243,8 @@ export function RunConsolePage({ project, accessToken }: { project: Project | un
               id: eventId, event_type: "run.event", timestamp: new Date().toISOString(), payload: {},
             }, ...items].slice(0, 100));
           }
-          if (requestedHealingId) {
-            void loadHealing(requestedHealingId).catch(() => undefined);
+          if (healingEventId && (opensHealingReview || healingEventId === healingIdRef.current)) {
+            void loadHealing(healingEventId).catch(() => undefined);
           }
           void Promise.all([loadRun(selectedId), loadSteps(selectedId), loadApprovals(selectedId)]).then(([currentRun]) => {
             if (terminalStatuses.has(currentRun.status)) {

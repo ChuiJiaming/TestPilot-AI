@@ -355,6 +355,9 @@ def test_rejection_fails_run_without_enqueuing_replay(db):
     assert result["healing_status"] == "REJECTED"
     with db["sessions"]() as session:
         assert session.get(RunRecord, db["run_id"]).status == "FAILED"
+        run_case = session.get(RunCaseRecord, db["run_case_id"])
+        assert run_case.status == "FAILED"
+        assert run_case.finished_at.replace(tzinfo=timezone.utc) == db["now"] + timedelta(minutes=1)
         assert session.get(HealingRecord, rejected["healing_id"]).status == "REJECTED"
         assert session.scalars(select(OutboxRecord).where(
             OutboxRecord.event_type == "RUN_RESUME_REQUESTED",
@@ -370,12 +373,24 @@ def test_due_healing_approval_expiry_is_atomic_and_never_resumes(db):
         healing = session.get(HealingRecord, request["healing_id"])
         approval = session.get(CaseApprovalRecord, request["approval_id"])
         run = session.get(RunRecord, db["run_id"])
+        run_case = session.get(RunCaseRecord, db["run_case_id"])
         assert healing.status == "EXPIRED"
         assert approval.status == "EXPIRED"
         assert run.status == "FAILED"
+        assert run_case.status == "FAILED"
+        assert run_case.finished_at.replace(tzinfo=timezone.utc) == expired_at
         assert session.scalars(select(OutboxRecord).where(
             OutboxRecord.event_type == "RUN_RESUME_REQUESTED",
         )).all() == []
+        events = list(session.scalars(select(AgentEventRecord).where(
+            AgentEventRecord.run_id == db["run_id"],
+        ).order_by(AgentEventRecord.id)).all())
+        decision_index = next(index for index, event in enumerate(events)
+                              if event.event_type == "approval.decided"
+                              and event.payload.get("target_kind") == "healing")
+        finish_index = next(index for index, event in enumerate(events)
+                            if event.event_type == "run.finished")
+        assert decision_index < finish_index
 
 
 def test_due_healing_approval_expiry_worker_is_scheduled_and_bounded(monkeypatch):

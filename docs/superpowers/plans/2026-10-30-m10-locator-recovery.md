@@ -184,3 +184,9 @@
 - Add numbered migrations only when the persisted contract requires a capability absent from the current schema. Migration 014 permits `RunCase.WAITING_APPROVAL`; migration 015 permits `Healing.CANCELLED` and links replay steps to their Healing record. `tests/test_migration_runner.py` verifies the numbered migration inventory.
 - The user chose direct changes in the current workspace and approved native inline execution. Keep commits scoped to each task because the workspace already contains unrelated, uncommitted Phase 1–3 acceptance changes.
 - Browser integration, database migration execution, and deployment checks require the Docker-backed environment and remain outside local source validation until available.
+
+## Review follow-up (2026-10-30)
+
+- Rejection and expiry now include `WAITING_APPROVAL` RunCases in terminalization, so the RunCase reaches `FAILED` with `finished_at` alongside the Run.
+- The Run Console refreshes the scoped Healing record from the actual `approval.decided` payload for Healing targets and from `healing.applied`, so background expiry and replay completion reach the open review.
+- Post-review verification: M10 API/persistence/recovery/OpenAPI suite 61 passed; Worker/Gateway suite 21 passed; Run Console review suite 5 passed; Web production build passed.

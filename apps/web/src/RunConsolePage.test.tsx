@@ -42,6 +42,7 @@ class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
+  closed = false;
   private listeners = new Map<string, Set<(event: Event) => void>>();
 
   constructor(readonly url: string) {
@@ -57,6 +58,7 @@ class FakeEventSource {
   }
 
   dispatch(type: string, payload: Record<string, unknown>, id = 1) {
+    if (this.closed) return;
     const event = new MessageEvent(type, {
       data: JSON.stringify({ event_type: type, timestamp: "2026-10-30T09:03:00Z", payload }),
       lastEventId: String(id),
@@ -64,7 +66,7 @@ class FakeEventSource {
     for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
-  close() {}
+  close() { this.closed = true; }
 }
 
 function response(value: unknown, status = 200) {
@@ -78,12 +80,15 @@ function setup({
   decisionStatus = 200,
   decisionBody = { ...healing, status: "APPROVED", approval: { ...healing.approval, status: "APPROVED", decided_by: "reviewer-1", reason: "Confirmed the unique target" } },
   refreshAfterConflict = false,
+  refreshHealingStatusAfterEvents,
 }: {
   decisionStatus?: number;
   decisionBody?: unknown;
   refreshAfterConflict?: boolean;
+  refreshHealingStatusAfterEvents?: "EXPIRED" | "APPLIED";
 } = {}) {
   let healingReads = 0;
+  let runStatusOverride: string | null = null;
   const requests: Array<{ url: string; init: RequestInit }> = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = String(input);
@@ -91,7 +96,9 @@ function setup({
     if (url.endsWith("/test-runs?limit=50")) return response({ items: [run], next_cursor: null });
     if (url.endsWith("/projects/project-1/plans")) return response({ items: [{ id: "plan-1", name: "Checkout", policy: {} }] });
     if (url.endsWith("/projects/project-1/environments?limit=100")) return response({ items: [{ id: "env-1", name: "Staging" }] });
-    if (url === "/api/v1/test-runs/run-1") return response(run);
+    if (url === "/api/v1/test-runs/run-1") {
+      return response(runStatusOverride ? { ...run, status: runStatusOverride } : run);
+    }
     if (url === "/api/v1/test-runs/run-1/steps") return response({ items: [] });
     if (url === "/api/v1/test-runs/run-1/approvals?limit=100") return response({ items: [], next_cursor: null });
     if (url === "/api/v1/sse-tickets") return response({ run_id: run.id, expires_in: 60 });
@@ -99,7 +106,18 @@ function setup({
     if (url === "/api/v1/healing-records/healing-1") {
       healingReads += 1;
       if (refreshAfterConflict && healingReads > 1) {
-        return response({ ...healing, status: "EXPIRED", approval: { ...healing.approval, status: "EXPIRED" } });
+        return response({ ...healing, status: "EXPIRED", approval: { ...healing.approval, status: "EXPIRED", reason: "HEALING_APPROVAL_EXPIRED" } });
+      }
+      if (refreshHealingStatusAfterEvents && healingReads > 1) {
+        const status = refreshHealingStatusAfterEvents;
+        return response({
+          ...healing, status,
+          approval: {
+            ...healing.approval,
+            status: status === "EXPIRED" ? "EXPIRED" : "APPROVED",
+            reason: status === "EXPIRED" ? "HEALING_APPROVAL_EXPIRED" : "Confirmed the unique target",
+          },
+        });
       }
       return response(healing);
     }
@@ -109,7 +127,7 @@ function setup({
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<RunConsolePage project={project} accessToken="access-token" />);
-  return { fetchMock, requests };
+  return { fetchMock, requests, setRunStatus: (status: string) => { runStatusOverride = status; } };
 }
 
 async function requestHealingReview() {
@@ -182,5 +200,38 @@ describe("RunConsolePage Healing review", () => {
     await waitFor(() => expect(screen.getByText("已过期")).toBeInTheDocument());
     expect(screen.getByRole("button", { name: "批准并继续" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "拒绝恢复" })).toBeDisabled();
+  });
+
+  it("refreshes the open review when a background expiry is decided", async () => {
+    const { requests, setRunStatus } = setup({ refreshHealingStatusAfterEvents: "EXPIRED" });
+    await requestHealingReview();
+    await screen.findByText("待人工审核");
+    setRunStatus("FAILED");
+
+    await act(async () => {
+      FakeEventSource.instances[0].dispatch("approval.decided", {
+        target_kind: "healing", target_id: healing.id, status: "EXPIRED",
+      }, 2);
+    });
+
+    await waitFor(() => expect(FakeEventSource.instances[0].closed).toBe(true));
+    expect(await screen.findByText("已过期")).toBeInTheDocument();
+    expect(screen.getByText(/HEALING_APPROVAL_EXPIRED/)).toBeInTheDocument();
+    expect(requests.filter(({ url }) => url === "/api/v1/healing-records/healing-1")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "批准并继续" })).toBeDisabled();
+  });
+
+  it("refreshes the open review after the approved recovery is applied", async () => {
+    setup({ refreshHealingStatusAfterEvents: "APPLIED" });
+    await requestHealingReview();
+
+    await act(async () => {
+      FakeEventSource.instances[0].dispatch("healing.applied", {
+        healing_id: healing.id, status: "APPLIED",
+      }, 2);
+    });
+
+    expect(await screen.findByText("恢复已完成")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "批准并继续" })).toBeDisabled();
   });
 });

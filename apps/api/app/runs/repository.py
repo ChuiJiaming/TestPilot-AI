@@ -1546,10 +1546,6 @@ class RunRepository:
         approval.decided_by = actor_user_id
         approval.reason = reason
         approval.decided_at = now
-        self._finish_run_for_approval(
-            session, run, approval, now=now,
-            reason_code=f"HEALING_{status}",
-        )
         self._audit_approval(
             session, approval, actor_user_id=actor_user_id,
             action="approval.expired" if status == "EXPIRED" else "approval.decided",
@@ -1564,6 +1560,10 @@ class RunRepository:
             "healing_id": str(healing.id), "run_case_id": str(run_case.id),
             "step_id": str(step.id), "status": status,
         }, now)
+        self._finish_run_for_approval(
+            session, run, approval, now=now,
+            reason_code=f"HEALING_{status}",
+        )
 
     def list_approvals(self, actor_id: UUID, run_id: UUID, *, limit: int = 30,
                        cursor: str | None = None):
@@ -2035,7 +2035,7 @@ class RunRepository:
             step.finished_at = now
         run_cases = session.scalars(select(RunCaseRecord).where(
             RunCaseRecord.run_id == run.id,
-            RunCaseRecord.status.in_(("QUEUED", "RUNNING")),
+            RunCaseRecord.status.in_(("QUEUED", "RUNNING", "WAITING_APPROVAL")),
         ).with_for_update()).all()
         for run_case in run_cases:
             run_case.status = "FAILED" if run_case.status in {"RUNNING", "WAITING_APPROVAL"} else "SKIPPED"
