@@ -2,13 +2,17 @@
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from hashlib import sha256
+import json
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from uuid import UUID, uuid4
 import secrets
 
-from apps.api.app.cases.persistence import CaseApprovalRecord, TestCaseRecord, TestCaseVersionRecord
+from apps.api.app.cases.persistence import (
+    CaseApprovalRecord, CaseRepository, TestCaseRecord, TestCaseVersionRecord,
+)
 from apps.api.app.cases.planning import (
     OutboxRecord, SuiteCaseRecord, TestPlanRecord, TestSuiteRecord,
 )
@@ -20,10 +24,11 @@ from apps.api.app.tenancy.persistence import (
     OrganizationMembershipRecord, ProjectMembershipRecord, ProjectRecord,
 )
 from apps.api.app.runs.persistence import (
-    AgentEventRecord, BrowserSessionRecord, ProcessedEventRecord, RunAdmissionRepository,
-    RunCaseRecord, RunCreationBlocked, SseTicketRecord, TestRunRecord,
+    AgentEventRecord, BrowserSessionRecord, HealingRecord, ProcessedEventRecord,
+    RunAdmissionRepository, RunCaseRecord, RunCreationBlocked, SseTicketRecord, TestRunRecord,
     TestStepRecord, WorkerLeaseRecord,
 )
+from apps.api.app.runs.recovery import RecoveryProposal, evaluate_recovery_candidate
 
 
 ACTIVE_STATUSES = {
@@ -68,6 +73,8 @@ RUN_TRANSITIONS = {
 }
 TERMINAL_STATUSES = {"PASSED", "FAILED", "ERROR", "CANCELLED"}
 RUN_APPROVAL_TTL = timedelta(minutes=30)
+HEALING_APPROVAL_TTL = timedelta(minutes=30)
+HEALING_EVIDENCE_MAX_BYTES = 16_384
 SENSITIVE_EVENT_KEYS = {
     "prompt", "password", "cookie", "secret", "authorization", "access_token",
     "refresh_token", "job_token", "page_content", "html", "body",
@@ -83,6 +90,7 @@ class RunRepository:
         self.session_factory = session_factory
         self.snapshots = snapshots or EnvironmentSnapshotRepository(session_factory)
         self.admission = RunAdmissionRepository(session_factory)
+        self.cases = CaseRepository(session_factory)
 
     def create_run(self, actor_id: UUID, *, project_id: UUID, environment_id: UUID,
                    plan_id: UUID | None, browser_matrix: list[str], trigger_source: str,
@@ -869,6 +877,563 @@ class RunRepository:
         with self.session_factory() as session:
             return session.scalar(select(TestRunRecord.project_id).where(TestRunRecord.id == run_id))
 
+    def propose_healing(self, run_id: UUID, run_case_id: UUID, failed_step_id: UUID, *,
+                        old_locator: dict, proposal: RecoveryProposal | dict,
+                        evidence: dict, requester_id: UUID, now: datetime) -> dict:
+        """Persist one verified locator candidate and park its owning Run atomically."""
+        candidate = (proposal if isinstance(proposal, RecoveryProposal)
+                     else RecoveryProposal.model_validate(proposal))
+        if not isinstance(old_locator, dict):
+            raise ValueError("old locator is required")
+        decision = evaluate_recovery_candidate(
+            proposal=candidate,
+            verification=evidence.get("verification") if isinstance(evidence, dict) else None,
+        )
+        if not decision.accepted or decision.proposal is None:
+            raise RunApprovalConflict(f"Recovery candidate rejected: {decision.reason_code}")
+        candidate = decision.proposal
+        bounded_evidence = self._bounded_healing_evidence(evidence)
+        bounded_evidence["source"] = candidate.source
+        bounded_evidence["semantic_descriptor"] = self._bounded_healing_evidence({
+            "descriptor": candidate.semantic_descriptor,
+        }).get("descriptor", {})
+        if len(json.dumps(bounded_evidence, ensure_ascii=False).encode("utf-8")) > HEALING_EVIDENCE_MAX_BYTES:
+            raise ValueError("healing evidence exceeds its storage limit")
+
+        with self.session_factory.begin() as session:
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_id,
+            ).with_for_update())
+            if run is None or run.requested_by != requester_id:
+                raise RunApprovalConflict("Run is no longer eligible for Healing")
+            if run.status == "WAITING_APPROVAL":
+                pending = session.scalar(select(HealingRecord).join(
+                    TestStepRecord, TestStepRecord.id == HealingRecord.step_id,
+                ).where(
+                    TestStepRecord.id == failed_step_id,
+                    HealingRecord.status == "PENDING_APPROVAL",
+                ).with_for_update())
+                if pending is not None and pending.new_locator == candidate.locator:
+                    approval = session.scalar(select(CaseApprovalRecord).where(
+                        CaseApprovalRecord.target_kind == "healing",
+                        CaseApprovalRecord.target_id == pending.id,
+                        CaseApprovalRecord.project_id == run.project_id,
+                    ).with_for_update())
+                    if approval is not None:
+                        return {"healing_id": pending.id, "approval_id": approval.id,
+                                "expires_at": approval.expires_at}
+                raise RunApprovalConflict("Run is no longer eligible for Healing")
+            if run.status != "RUNNING":
+                raise RunApprovalConflict("Run is no longer eligible for Healing")
+            run_case = session.get(RunCaseRecord, run_case_id)
+            if run_case is None or run_case.run_id != run.id or run_case.status != "RUNNING":
+                raise RunScopeDenied
+            step = session.get(TestStepRecord, failed_step_id)
+            if (step is None or step.run_case_id != run_case.id
+                    or step.action_id != candidate.action_id or step.locator != old_locator
+                    or step.status not in {"FAILED", "ERROR"}):
+                raise RunApprovalConflict("failed step no longer matches the Recovery proposal")
+
+            existing = session.scalar(select(HealingRecord).where(
+                HealingRecord.step_id == step.id,
+                HealingRecord.status == "PENDING_APPROVAL",
+            ).order_by(HealingRecord.created_at.desc()).with_for_update())
+            if existing is not None:
+                if existing.new_locator != candidate.locator:
+                    raise RunApprovalConflict("a different Healing proposal is already pending")
+                approval = session.scalar(select(CaseApprovalRecord).where(
+                    CaseApprovalRecord.target_kind == "healing",
+                    CaseApprovalRecord.target_id == existing.id,
+                    CaseApprovalRecord.project_id == run.project_id,
+                ).with_for_update())
+                if approval is None:
+                    raise RunApprovalConflict("pending Healing approval is missing")
+                return {"healing_id": existing.id, "approval_id": approval.id,
+                        "expires_at": approval.expires_at}
+
+            prior_attempts = session.scalar(select(func.count()).select_from(HealingRecord).where(
+                HealingRecord.step_id == step.id,
+            )) or 0
+            if prior_attempts >= 2:
+                raise RunApprovalConflict("Healing candidate limit reached")
+
+            healing_id = uuid4()
+            expires_at = now + HEALING_APPROVAL_TTL
+            healing = HealingRecord(
+                id=healing_id, step_id=step.id, old_locator=old_locator,
+                new_locator=candidate.locator, evidence=bounded_evidence,
+                confidence=Decimal(str(candidate.confidence)),
+                status="PENDING_APPROVAL", new_version_id=None,
+                approved_by=None, approved_at=None, applied_at=None, created_at=now,
+            )
+            correlation_key = f"healing:{healing_id}"
+            approval = CaseApprovalRecord(
+                id=uuid4(), project_id=run.project_id,
+                target_kind="healing", target_id=healing_id, run_id=None,
+                case_version_id=None, requested_by=requester_id, decided_by=None,
+                kind="HEALING", status="PENDING", reason=None, decided_at=None,
+                expires_at=expires_at,
+                payload={"step_id": str(step.id), "action_id": str(step.action_id)},
+                correlation_key=correlation_key, created_at=now,
+            )
+            session.add_all([healing, approval])
+            session.flush()
+
+            previous_status = run.status
+            run.status = "WAITING_APPROVAL"
+            run.lease_owner = None
+            run.lease_expires_at = None
+            run.heartbeat_at = now
+            run_case.status = "WAITING_APPROVAL"
+            run_case.lease_owner = None
+            run_case.lease_expires_at = None
+            run_case.heartbeat_at = now
+            step.status = "WAITING_APPROVAL"
+            step.finished_at = now
+            lease = session.scalar(select(WorkerLeaseRecord).where(
+                WorkerLeaseRecord.resource_type == "run",
+                WorkerLeaseRecord.resource_id == run.id,
+            ).with_for_update())
+            if lease is not None:
+                session.delete(lease)
+
+            self._audit_approval(
+                session, approval, actor_user_id=requester_id,
+                action="approval.requested", now=now, reason_code="HEALING_PROPOSED",
+            )
+            self._append_event(session, run.id, "approval.requested", {
+                "approval_id": str(approval.id), "target_kind": "healing",
+                "target_id": str(healing.id), "expires_at": expires_at.isoformat(),
+            }, now)
+            self._append_event(session, run.id, "run.healing_requested", {
+                "healing_id": str(healing.id), "approval_id": str(approval.id),
+                "run_case_id": str(run_case.id), "step_id": str(step.id),
+                "action_id": str(step.action_id), "expires_at": expires_at.isoformat(),
+                "status": healing.status,
+            }, now)
+            self._append_event(session, run.id, "run.status_changed", {
+                "from_status": previous_status, "status": "WAITING_APPROVAL",
+                "reason_code": "HEALING_PROPOSED",
+            }, now)
+            return {"healing_id": healing.id, "approval_id": approval.id,
+                    "expires_at": expires_at}
+
+    def get_healing(self, actor_id: UUID, healing_id: UUID) -> dict | None:
+        with self.session_factory() as session:
+            healing = session.get(HealingRecord, healing_id)
+            if healing is None:
+                return None
+            step = session.get(TestStepRecord, healing.step_id)
+            run_case = session.get(RunCaseRecord, step.run_case_id) if step else None
+            run = session.get(TestRunRecord, run_case.run_id) if run_case else None
+            if step is None or run_case is None or run is None:
+                return None
+            self._visible_project(session, actor_id, run.project_id)
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.target_kind == "healing",
+                CaseApprovalRecord.target_id == healing.id,
+                CaseApprovalRecord.project_id == run.project_id,
+            ))
+            if approval is None:
+                return None
+            return self._healing_review_dict(healing, approval, run, run_case, step)
+
+    def decide_healing(self, actor_id: UUID, healing_id: UUID, *,
+                       decision: str, reason: str, now: datetime) -> dict:
+        if decision not in {"APPROVE", "REJECT"}:
+            raise ValueError("unsupported Healing decision")
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 2000:
+            raise ValueError("a non-empty decision reason is required")
+        with self.session_factory() as lookup:
+            run_id = lookup.scalar(
+                select(RunCaseRecord.run_id)
+                .join(TestStepRecord, TestStepRecord.run_case_id == RunCaseRecord.id)
+                .join(HealingRecord, HealingRecord.step_id == TestStepRecord.id)
+                .where(HealingRecord.id == healing_id)
+            )
+        if run_id is None:
+            raise RunScopeDenied
+
+        with self.session_factory.begin() as session:
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_id,
+            ).with_for_update())
+            if run is None:
+                raise RunScopeDenied
+            self._visible_project(session, actor_id, run.project_id, for_write=True)
+            healing = session.scalar(select(HealingRecord).where(
+                HealingRecord.id == healing_id,
+            ).with_for_update())
+            if healing is None:
+                raise RunScopeDenied
+            step = session.get(TestStepRecord, healing.step_id)
+            run_case = session.get(RunCaseRecord, step.run_case_id) if step else None
+            if (step is None or run_case is None or run_case.run_id != run.id):
+                raise RunScopeDenied
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.target_kind == "healing",
+                CaseApprovalRecord.target_id == healing.id,
+                CaseApprovalRecord.project_id == run.project_id,
+            ).with_for_update())
+            if approval is None:
+                raise RunScopeDenied
+            if (healing.status != "PENDING_APPROVAL" or approval.status != "PENDING"
+                    or run.status != "WAITING_APPROVAL"
+                    or run_case.status != "WAITING_APPROVAL"):
+                raise RunApprovalConflict("Healing is no longer awaiting a decision")
+            if approval.expires_at is None:
+                raise RunApprovalConflict("Healing approval has no expiry")
+            if self._timestamp_expired(approval.expires_at, now):
+                self._finish_healing_decision(
+                    session, run, run_case, step, healing, approval,
+                    status="EXPIRED", actor_user_id=None, reason="HEALING_APPROVAL_EXPIRED",
+                    now=now,
+                )
+                return {"healing_status": "EXPIRED", "approval_status": "EXPIRED",
+                        "expired": True}
+            if approval.requested_by == actor_id:
+                raise RunApprovalPermissionDenied
+
+            previous_status = run.status
+            previous_attempt_token = run.attempt_token
+            if decision == "REJECT":
+                self._finish_healing_decision(
+                    session, run, run_case, step, healing, approval,
+                    status="REJECTED", actor_user_id=actor_id,
+                    reason=reason.strip(), now=now,
+                )
+                return {"healing_status": "REJECTED", "approval_status": "REJECTED",
+                        "expired": False}
+
+            if previous_attempt_token is None:
+                raise RunApprovalConflict("Healing Run has no fenced attempt")
+            attempt_token = uuid4()
+            healing.status = "APPROVED"
+            healing.approved_by = actor_id
+            healing.approved_at = now
+            approval.status = "APPROVED"
+            approval.decided_by = actor_id
+            approval.reason = reason.strip()
+            approval.decided_at = now
+            approval.payload = {
+                **(approval.payload if isinstance(approval.payload, dict) else {}),
+                "previous_attempt_token": str(previous_attempt_token),
+                "attempt_token": str(attempt_token),
+            }
+            run.status = "RUNNING"
+            run.attempt_token = attempt_token
+            run.lease_owner = None
+            run.lease_expires_at = None
+            run.heartbeat_at = now
+            run.finished_at = None
+            run_case.status = "RUNNING"
+            run_case.attempt_token = attempt_token
+            run_case.lease_owner = None
+            run_case.lease_expires_at = None
+            run_case.heartbeat_at = now
+            browser_session = session.scalar(select(BrowserSessionRecord).where(
+                BrowserSessionRecord.run_case_id == run_case.id,
+                BrowserSessionRecord.browser == run_case.browser_name,
+                BrowserSessionRecord.attempt_token == previous_attempt_token,
+            ).order_by(BrowserSessionRecord.created_at.desc()))
+            if browser_session is not None:
+                approval.payload = {
+                    **approval.payload,
+                    "session_id": str(browser_session.id),
+                    "worker_instance": browser_session.worker_instance,
+                }
+
+            self._audit_approval(
+                session, approval, actor_user_id=actor_id, action="approval.decided",
+                now=now, reason_code="HEALING_APPROVED",
+            )
+            self._append_event(session, run.id, "approval.decided", {
+                "approval_id": str(approval.id), "target_kind": "healing",
+                "target_id": str(healing.id), "status": "APPROVED",
+                "decision_actor_id": str(actor_id),
+            }, now)
+            self._append_event(session, run.id, "run.healing_approved", {
+                "healing_id": str(healing.id), "run_case_id": str(run_case.id),
+                "step_id": str(step.id), "previous_attempt_token": str(previous_attempt_token),
+                "attempt_token": str(attempt_token),
+            }, now)
+            self._append_event(session, run.id, "run.status_changed", {
+                "from_status": previous_status, "status": "RUNNING",
+                "reason_code": "HEALING_APPROVED",
+            }, now)
+            session.add(OutboxRecord(
+                aggregate_type="run", aggregate_id=run.id,
+                event_type="RUN_RESUME_REQUESTED",
+                payload={"run_id": str(run.id), "healing_id": str(healing.id),
+                         "previous_attempt_token": str(previous_attempt_token),
+                         "attempt_token": str(attempt_token)},
+                status="PENDING", attempts=0, available_at=now, created_at=now,
+            ))
+            return {"healing_status": "APPROVED", "approval_status": "APPROVED",
+                    "expired": False, "previous_attempt_token": previous_attempt_token,
+                    "attempt_token": attempt_token}
+
+    def load_approved_healing(self, run_id: UUID, run_case_id: UUID,
+                              attempt_token: UUID, *, worker_id: str) -> dict | None:
+        with self.session_factory() as session:
+            run = session.get(TestRunRecord, run_id)
+            run_case = session.get(RunCaseRecord, run_case_id)
+            if (run is None or run_case is None or run_case.run_id != run_id
+                    or run.status != "RUNNING" or run.attempt_token != attempt_token
+                    or run.lease_owner != worker_id or run_case.attempt_token != attempt_token):
+                return None
+            approval_row = session.execute(
+                select(HealingRecord, CaseApprovalRecord, TestStepRecord)
+                .join(TestStepRecord, TestStepRecord.id == HealingRecord.step_id)
+                .join(CaseApprovalRecord,
+                      (CaseApprovalRecord.target_kind == "healing")
+                      & (CaseApprovalRecord.target_id == HealingRecord.id)
+                      & (CaseApprovalRecord.project_id == run.project_id))
+                .where(TestStepRecord.run_case_id == run_case_id,
+                       HealingRecord.status == "APPROVED",
+                       CaseApprovalRecord.status == "APPROVED")
+                .order_by(HealingRecord.approved_at.desc(), HealingRecord.id)
+            ).first()
+            if approval_row is None:
+                return None
+            healing, approval, step = approval_row
+            payload = approval.payload if isinstance(approval.payload, dict) else {}
+            if payload.get("attempt_token") != str(attempt_token):
+                return None
+            previous_attempt = payload.get("previous_attempt_token")
+            try:
+                previous_attempt_token = UUID(str(previous_attempt))
+            except (TypeError, ValueError, AttributeError):
+                return None
+            browser_session = session.scalar(select(BrowserSessionRecord).where(
+                BrowserSessionRecord.run_case_id == run_case_id,
+                BrowserSessionRecord.browser == run_case.browser_name,
+                BrowserSessionRecord.attempt_token == previous_attempt_token,
+            ).order_by(BrowserSessionRecord.created_at.desc()))
+            return {
+                "healing_id": healing.id,
+                "approval_id": approval.id,
+                "run_id": run.id,
+                "run_case_id": run_case.id,
+                "step_id": step.id,
+                "action_id": step.action_id,
+                "sequence": step.sequence,
+                "browser": run_case.browser_name,
+                "old_locator": healing.old_locator,
+                "new_locator": healing.new_locator,
+                "evidence": healing.evidence,
+                "previous_attempt_token": previous_attempt_token,
+                "attempt_token": attempt_token,
+                "session_id": browser_session.id if browser_session else None,
+                "worker_instance": browser_session.worker_instance if browser_session else None,
+                "session_status": browser_session.status if browser_session else "MISSING",
+            }
+
+    def complete_healing(self, healing_id: UUID, run_id: UUID, run_case_id: UUID,
+                         attempt_token: UUID, *, worker_id: str, now: datetime) -> dict:
+        with self.session_factory.begin() as session:
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_id,
+            ).with_for_update())
+            if run is None:
+                raise RunScopeDenied
+            healing = session.scalar(select(HealingRecord).where(
+                HealingRecord.id == healing_id,
+            ).with_for_update())
+            if healing is None:
+                raise RunScopeDenied
+            step = session.get(TestStepRecord, healing.step_id)
+            run_case = session.get(RunCaseRecord, run_case_id)
+            if (step is None or run_case is None or step.run_case_id != run_case_id
+                    or run_case.run_id != run.id or run.id != run_id
+                    or run.status != "RUNNING" or run.attempt_token != attempt_token
+                    or run.lease_owner != worker_id or run_case.attempt_token != attempt_token
+                    or healing.status != "APPROVED"):
+                raise StaleRunAttempt
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.target_kind == "healing",
+                CaseApprovalRecord.target_id == healing.id,
+                CaseApprovalRecord.project_id == run.project_id,
+            ).with_for_update())
+            if (approval is None or approval.status != "APPROVED"
+                    or (approval.payload or {}).get("attempt_token") != str(attempt_token)):
+                raise RunApprovalConflict("approved Healing no longer matches the active attempt")
+            version = self.cases.create_recovered_version_in_session(
+                session, source_version_id=run_case.case_version_id,
+                action_id=step.action_id, new_locator=healing.new_locator,
+                version_author_id=run.requested_by, now=now,
+            )
+            healing.new_version_id = version.id
+            healing.status = "APPLIED"
+            healing.applied_at = now
+            self._append_event(session, run.id, "healing.applied", {
+                "healing_id": str(healing.id), "run_case_id": str(run_case.id),
+                "new_version_id": str(version.id), "status": "APPLIED",
+            }, now)
+            return {"healing_id": healing.id, "new_version_id": version.id,
+                    "attempt_token": attempt_token, "version_status": version.review_status}
+
+    def expire_healing_approval(self, approval_id: UUID, *, now: datetime) -> bool:
+        with self.session_factory() as lookup:
+            run_id = lookup.scalar(
+                select(RunCaseRecord.run_id)
+                .join(TestStepRecord, TestStepRecord.run_case_id == RunCaseRecord.id)
+                .join(HealingRecord, HealingRecord.step_id == TestStepRecord.id)
+                .join(CaseApprovalRecord,
+                      (CaseApprovalRecord.target_kind == "healing")
+                      & (CaseApprovalRecord.target_id == HealingRecord.id))
+                .where(CaseApprovalRecord.id == approval_id)
+            )
+        if run_id is None:
+            return False
+        with self.session_factory.begin() as session:
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_id,
+            ).with_for_update())
+            # Lock Healing after Run, then its Approval, matching decision lock order.
+            healing_id = session.scalar(select(CaseApprovalRecord.target_id).where(
+                CaseApprovalRecord.id == approval_id,
+                CaseApprovalRecord.target_kind == "healing",
+            ))
+            healing = session.scalar(select(HealingRecord).where(
+                HealingRecord.id == healing_id,
+            ).with_for_update()) if healing_id else None
+            if run is None or healing is None:
+                return False
+            step = session.get(TestStepRecord, healing.step_id)
+            run_case = session.get(RunCaseRecord, step.run_case_id) if step else None
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.id == approval_id,
+                CaseApprovalRecord.target_kind == "healing",
+                CaseApprovalRecord.target_id == healing.id,
+                CaseApprovalRecord.project_id == run.project_id,
+            ).with_for_update())
+            if (step is None or run_case is None or approval is None
+                    or healing.status != "PENDING_APPROVAL" or approval.status != "PENDING"
+                    or approval.expires_at is None
+                    or not self._timestamp_expired(approval.expires_at, now)):
+                return False
+            self._finish_healing_decision(
+                session, run, run_case, step, healing, approval,
+                status="EXPIRED", actor_user_id=None,
+                reason="HEALING_APPROVAL_EXPIRED", now=now,
+            )
+            return True
+
+    def expire_due_healing_approvals(self, *, now: datetime, limit: int = 100) -> int:
+        if not 1 <= limit <= 500:
+            raise ValueError("Healing approval expiry batch must be between 1 and 500")
+        with self.session_factory() as session:
+            approval_ids = list(session.scalars(
+                select(CaseApprovalRecord.id)
+                .join(HealingRecord,
+                      (CaseApprovalRecord.target_kind == "healing")
+                      & (CaseApprovalRecord.target_id == HealingRecord.id))
+                .where(CaseApprovalRecord.status == "PENDING",
+                       CaseApprovalRecord.expires_at <= now,
+                       HealingRecord.status == "PENDING_APPROVAL")
+                .order_by(CaseApprovalRecord.expires_at, CaseApprovalRecord.id)
+                .limit(limit)
+            ).all())
+        return sum(self.expire_healing_approval(item, now=now) for item in approval_ids)
+
+    @staticmethod
+    def _bounded_healing_evidence(value: dict) -> dict:
+        if not isinstance(value, dict):
+            raise ValueError("healing evidence must be an object")
+        excluded = {
+            "password", "cookie", "secret", "authorization", "access_token",
+            "refresh_token", "job_token", "token", "html", "raw_html",
+            "page_content", "screenshot", "screenshot_bytes", "image_data",
+            "form_values", "input_value", "text_value", "value", "text",
+        }
+
+        def clean(item, *, depth=0):
+            if depth > 8:
+                return None
+            if isinstance(item, dict):
+                result = {}
+                for key, child in list(item.items())[:100]:
+                    if not isinstance(key, str) or key.casefold() in excluded:
+                        continue
+                    cleaned = clean(child, depth=depth + 1)
+                    if cleaned is not None:
+                        result[key[:80]] = cleaned
+                return result
+            if isinstance(item, list):
+                return [clean(child, depth=depth + 1) for child in item[:100]]
+            if isinstance(item, str):
+                return item[:512]
+            if item is None or type(item) in {bool, int, float}:
+                return item
+            raise ValueError("healing evidence contains an unsupported value")
+
+        cleaned = clean(value)
+        encoded = json.dumps(cleaned, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        if len(encoded) > HEALING_EVIDENCE_MAX_BYTES:
+            raise ValueError("healing evidence exceeds its storage limit")
+        return cleaned
+
+    @staticmethod
+    def _healing_review_dict(healing, approval, run, run_case, step):
+        evidence = healing.evidence if isinstance(healing.evidence, dict) else {}
+        return {
+            "id": healing.id,
+            "run_id": run.id,
+            "run_case_id": run_case.id,
+            "step_id": step.id,
+            "action_id": step.action_id,
+            "sequence": step.sequence,
+            "action_type": step.action_type,
+            "browser": run_case.browser_name,
+            "old_locator": healing.old_locator,
+            "new_locator": healing.new_locator,
+            "source": evidence.get("source"),
+            "confidence": float(healing.confidence),
+            "evidence": evidence,
+            "status": healing.status,
+            "approval": {
+                "id": approval.id,
+                "status": approval.status,
+                "requested_by": approval.requested_by,
+                "decided_by": approval.decided_by,
+                "reason": approval.reason,
+                "expires_at": approval.expires_at,
+            },
+            "expires_at": approval.expires_at,
+            "new_version_id": healing.new_version_id,
+            "applied_at": healing.applied_at,
+            "created_at": healing.created_at,
+        }
+
+    def _finish_healing_decision(self, session, run, run_case, step, healing, approval,
+                                 *, status, actor_user_id, reason, now):
+        if status not in {"REJECTED", "EXPIRED"}:
+            raise ValueError("unsupported terminal Healing decision")
+        healing.status = status
+        approval.status = status
+        approval.decided_by = actor_user_id
+        approval.reason = reason
+        approval.decided_at = now
+        self._finish_run_for_approval(
+            session, run, approval, now=now,
+            reason_code=f"HEALING_{status}",
+        )
+        self._audit_approval(
+            session, approval, actor_user_id=actor_user_id,
+            action="approval.expired" if status == "EXPIRED" else "approval.decided",
+            now=now, reason_code=f"HEALING_{status}",
+        )
+        self._append_event(session, run.id, "approval.decided", {
+            "approval_id": str(approval.id), "target_kind": "healing",
+            "target_id": str(healing.id), "status": status,
+            "reason_code": f"HEALING_{status}",
+        }, now)
+        self._append_event(session, run.id, "run.healing_decided", {
+            "healing_id": str(healing.id), "run_case_id": str(run_case.id),
+            "step_id": str(step.id), "status": status,
+        }, now)
+
     def list_approvals(self, actor_id: UUID, run_id: UUID, *, limit: int = 30,
                        cursor: str | None = None):
         key = self._decode_cursor(cursor) if cursor is not None else None
@@ -1278,7 +1843,7 @@ class RunRepository:
     def _cancel_unfinished_run_work(self, session, run_id, *, now):
         run_cases = session.scalars(select(RunCaseRecord).where(
             RunCaseRecord.run_id == run_id,
-            RunCaseRecord.status.in_(("QUEUED", "RUNNING")),
+            RunCaseRecord.status.in_(("QUEUED", "RUNNING", "WAITING_APPROVAL")),
         ).with_for_update()).all()
         for run_case in run_cases:
             run_case.status = "CANCELLED"
@@ -1342,7 +1907,7 @@ class RunRepository:
             RunCaseRecord.status.in_(("QUEUED", "RUNNING")),
         ).with_for_update()).all()
         for run_case in run_cases:
-            run_case.status = "FAILED" if run_case.status == "RUNNING" else "SKIPPED"
+            run_case.status = "FAILED" if run_case.status in {"RUNNING", "WAITING_APPROVAL"} else "SKIPPED"
             run_case.finished_at = now
         self._append_event(session, run.id, "run.finished", {
             "from_status": "WAITING_APPROVAL", "status": "FAILED",

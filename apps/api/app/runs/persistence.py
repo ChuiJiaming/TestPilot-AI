@@ -4,7 +4,7 @@ from contextlib import nullcontext
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Uuid, func, select
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, Numeric, String, Uuid, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -84,6 +84,26 @@ class TestStepRecord(AuthBase):
     attempt_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class HealingRecord(AuthBase):
+    __tablename__ = "healing_records"
+
+    id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
+    step_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("test_steps.id"), nullable=False)
+    old_locator: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    new_locator: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    evidence: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
+    confidence: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PROPOSED")
+    new_version_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("test_case_versions.id"))
+    approved_by: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class AgentEventRecord(AuthBase):

@@ -15,9 +15,9 @@ class MigrationRunnerTests(unittest.TestCase):
         migrations = repository_migrations(
             Path(__file__).resolve().parents[1] / "db" / "migrations"
         )
-        self.assertEqual(len(migrations), 7)
+        self.assertEqual(len(migrations), 14)
         self.assertEqual(migrations[0].name, "001_schema.sql")
-        self.assertEqual(migrations[-1].name, "007_auth_sessions.sql")
+        self.assertEqual(migrations[-1].name, "014_m10_run_case_approval_state.sql")
         self.assertNotIn("005_preflight_and_validate.sql", {path.name for path in migrations})
 
     def test_normalizes_transaction_wrappers_and_keeps_content_checksum(self):

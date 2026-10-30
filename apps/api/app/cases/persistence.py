@@ -3,13 +3,15 @@
 from datetime import datetime
 import base64
 import binascii
-from uuid import UUID, uuid4
+from copy import deepcopy
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, String, Uuid, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from apps.api.app.auth.persistence import AuthBase
+from apps.api.app.cases.dsl import Locator
 from apps.api.app.core.audit import append_audit_entry
 from apps.api.app.tenancy.persistence import (
     OrganizationMembershipRecord,
@@ -67,6 +69,7 @@ class CaseApprovalRecord(AuthBase):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
+    correlation_key: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -166,6 +169,63 @@ class CaseRepository:
             session.flush()
             self._request_case_version_approval(session, case, record, actor_id=actor_id, now=now)
             return self._version_dict(record)
+
+    @staticmethod
+    def create_recovered_version_in_session(
+        session, *, source_version_id: UUID, action_id: UUID, new_locator: dict,
+        version_author_id: UUID, now: datetime,
+    ) -> TestCaseVersionRecord:
+        """Clone a pinned v2 version and change only the identified step locator."""
+        source = session.scalar(select(TestCaseVersionRecord).where(
+            TestCaseVersionRecord.id == source_version_id,
+        ).with_for_update())
+        if source is None or source.dsl_schema_version != 2 or source.dsl_title is None:
+            raise CaseVersionConflict("locator recovery requires a pinned DSL v2 version")
+        case = session.scalar(select(TestCaseRecord).where(
+            TestCaseRecord.id == source.case_id,
+        ).with_for_update())
+        if case is None:
+            raise CaseScopeError
+
+        from pydantic import TypeAdapter, ValidationError
+
+        try:
+            normalized_locator = TypeAdapter(Locator).validate_python(new_locator)
+        except ValidationError as exc:
+            raise CaseVersionConflict("recovered locator is outside DSL v2") from exc
+
+        steps = deepcopy(source.steps)
+        matching_indices = [
+            index for index in range(len(steps))
+            if uuid5(NAMESPACE_URL, f"testpilot:v2:{source.id}:{index + 1}") == action_id
+        ]
+        if len(matching_indices) != 1:
+            raise CaseVersionConflict("recovery action is not part of the pinned version")
+        index = matching_indices[0]
+        step = steps[index]
+        if not isinstance(step, dict) or step.get("action") not in {"click", "fill"}:
+            raise CaseVersionConflict("recovery action has no replaceable locator")
+        step["locator"] = normalized_locator.model_dump(mode="json")
+
+        latest = session.scalar(select(func.max(TestCaseVersionRecord.version)).where(
+            TestCaseVersionRecord.case_id == case.id,
+        )) or 0
+        record = TestCaseVersionRecord(
+            id=uuid4(), case_id=case.id, version=latest + 1,
+            dsl_schema_version=source.dsl_schema_version, dsl_title=source.dsl_title,
+            version_name=source.version_name or source.dsl_title,
+            steps=steps, assertions=deepcopy(source.assertions),
+            changelog=f"Locator recovery for action {action_id}",
+            review_status="PENDING_APPROVAL", review_reason=None,
+            created_by=version_author_id, created_at=now,
+            approved_by=None, approved_at=None,
+        )
+        session.add(record)
+        session.flush()
+        CaseRepository._request_case_version_approval(
+            session, case, record, actor_id=version_author_id, now=now,
+        )
+        return record
 
     def get_version(self, actor_id: UUID, case_id: UUID, version: int):
         with self.session_factory() as session:
