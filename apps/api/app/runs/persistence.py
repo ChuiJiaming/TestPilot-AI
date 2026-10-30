@@ -80,6 +80,8 @@ class TestStepRecord(AuthBase):
     expected: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     status: Mapped[str] = mapped_column(String, nullable=False)
     replay_policy: Mapped[str] = mapped_column(String, nullable=False)
+    recovery_healing_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("healing_records.id"))
     idempotency_key: Mapped[str | None] = mapped_column(String)
     attempt_token: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -4,6 +4,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from apps.api.app.cases.dsl import DslValidationFailed, validate_dsl
 from apps.api.app.runs.repository import RunRepository, StaleRunAttempt
+from apps.api.app.runs.recovery import evaluate_recovery_candidate
 
 
 class ExecutionContractError(RuntimeError):
@@ -199,6 +200,8 @@ class DeterministicExecutor:
         self.current_case: dict | None = None
         self.current_session_id: UUID | None = None
         self.current_job_token: str | None = None
+        self.active_healing: dict | None = None
+        self.preserve_browser_session = False
         fixtures = policy.get("fixtures", {})
         self.fixtures = fixtures if isinstance(fixtures, dict) else {}
 
@@ -261,11 +264,33 @@ class DeterministicExecutor:
             return {"case_status": "CANCELLED"}
 
         step = steps[index]
+        replay_index = None
+        recovery_healing_id = None
+        if (self.active_healing is not None
+                and index == self.active_healing.get("failed_action_index")):
+            replay_index = self.active_healing["candidate_number"]
+            recovery_healing_id = self.active_healing["healing_id"]
+            replay_action_id = uuid5(
+                NAMESPACE_URL,
+                f"testpilot:m10:{step['action_id']}:{recovery_healing_id}:{replay_index}",
+            )
+            candidate_locator = self.active_healing["new_locator"]
+            step = {
+                **step,
+                "action_id": replay_action_id,
+                "locator": candidate_locator,
+                "args": {**step["args"], "locator": candidate_locator},
+            }
+        sequence = (
+            len(steps) + len(self.case_plans[case_id][2]) + replay_index
+            if replay_index is not None else index + 1
+        )
         persisted = self.repository.start_step(
-            case_id, action_id=step["action_id"], sequence=index + 1,
+            case_id, action_id=step["action_id"], sequence=sequence,
             action_type=step["action"], locator=step["locator"], expected=None,
             replay_policy=step["replay_policy"], attempt_token=self.attempt_token,
             worker_id=self.worker_id, now=self._now(),
+            recovery_healing_id=recovery_healing_id,
         )
         if not persisted.get("execute"):
             if persisted.get("reason") == "STEP_ALREADY_PASSED":
@@ -310,13 +335,47 @@ class DeterministicExecutor:
             )
             succeeded = result.get("status") == "SUCCEEDED"
             safe_result = {"status": result.get("status"), "error_code": result.get("error_code")}
+            if replay_index is not None:
+                safe_result.update({
+                    "recovery_healing_id": str(recovery_healing_id),
+                    "replay_index": replay_index,
+                    "source_action_id": str(self.active_healing["action_id"]),
+                })
+            if result.get("failure_phase") is not None:
+                safe_result["failure_phase"] = result.get("failure_phase")
+            if type(result.get("action_dispatched")) is bool:
+                safe_result["action_dispatched"] = result["action_dispatched"]
+            if type(result.get("match_count")) is int:
+                safe_result["match_count"] = result["match_count"]
             self.repository.finish_step(
                 persisted["step_id"], status="PASSED" if succeeded else "FAILED",
                 result=safe_result, attempt_token=self.attempt_token,
                 worker_id=self.worker_id, now=self._now(),
             )
             if not succeeded:
-                return {"case_status": "FAILED"}
+                eligible = (
+                    result.get("status") == "FAILED"
+                    and result.get("error_code") == "LOCATOR_NOT_UNIQUE"
+                    and result.get("failure_phase") == "locator_resolution"
+                    and result.get("action_dispatched") is False
+                    and type(result.get("match_count")) is int
+                    and result["match_count"] >= 0
+                    and result["match_count"] != 1
+                    and case.get("schema_version") == 2
+                    and step["action"] in {"click", "fill"}
+                    and isinstance(step.get("locator"), dict)
+                )
+                return {
+                    "case_status": "FAILED",
+                    "recovery_eligible": eligible,
+                    **({
+                        "failed_action_index": index,
+                        "failed_step_id": str(persisted["step_id"]),
+                        "failed_action_id": str(self.active_healing["action_id"])
+                        if replay_index is not None
+                        else str(step["action_id"]),
+                    } if eligible else {}),
+                }
         except StaleRunAttempt:
             raise
         except Exception as exc:
@@ -331,6 +390,124 @@ class DeterministicExecutor:
             "current_step": index + 1,
             "last_completed_action_id": str(step["action_id"]),
         }
+
+    def recovery_node(self, state: dict, recoverer, *, requester_id: UUID | None):
+        """Propose a locator only after a confirmed pre-dispatch failure and live verification."""
+        if state.get("recovery_eligible") is not True:
+            return {"case_status": "FAILED", "recovery_eligible": False}
+        case_id = UUID(str(state["run_case_id"]))
+        case, steps, _ = self.case_plans[case_id]
+        index = state.get("failed_action_index")
+        if type(index) is not int or not 0 <= index < len(steps):
+            return {"case_status": "FAILED", "recovery_eligible": False}
+        source_step = steps[index]
+        retry_count = state.get("retry_count", 0)
+        if type(retry_count) is not int or retry_count < 0:
+            return {"case_status": "ERROR", "recovery_eligible": False}
+
+        previous = self.active_healing
+        if retry_count >= 1:
+            if previous is not None:
+                self._cancel_active_healing(
+                    run_case_id=case_id, reason="HEALING_REPLAY_LIMIT",
+                    continue_retry=False,
+                )
+            return {"case_status": "FAILED", "recovery_eligible": False}
+
+        old_locator = source_step["locator"]
+        failed_step_id = state.get("failed_step_id")
+        proposal_step_id = None
+        if previous is not None:
+            if (previous.get("action_id") != source_step["action_id"]
+                    or previous.get("failed_action_index") != index):
+                self._cancel_active_healing(
+                    run_case_id=case_id, reason="HEALING_ACTION_SCOPE_MISMATCH",
+                    continue_retry=False,
+                )
+                return {"case_status": "ERROR", "recovery_eligible": False}
+            old_locator = previous["new_locator"]
+            proposal_step_id = previous["step_id"]
+            self._cancel_active_healing(
+                run_case_id=case_id, reason="HEALING_CANDIDATE_FAILED",
+                continue_retry=True,
+            )
+        else:
+            try:
+                proposal_step_id = UUID(str(failed_step_id))
+            except (ValueError, TypeError, AttributeError):
+                return {"case_status": "ERROR", "recovery_eligible": False}
+
+        if recoverer is None or requester_id is None:
+            return {"case_status": "FAILED", "recovery_eligible": False}
+        graph_budget = state.get("budget_left", 0)
+        if type(graph_budget) is not int or graph_budget <= 0:
+            return {"case_status": "FAILED", "recovery_eligible": False,
+                    "budget_left": 0}
+        if not self.consume_agent_budget():
+            return {"case_status": "FAILED", "recovery_eligible": False,
+                    "budget_left": 0}
+
+        failed_action = {
+            "action_id": str(source_step["action_id"]),
+            "action": source_step["action"],
+            "locator": old_locator,
+        }
+        try:
+            observation = self.observe_page()
+            proposal = recoverer(state, case, failed_action, observation)
+            if hasattr(proposal, "model_dump"):
+                proposal = proposal.model_dump(mode="json")
+            verification = self.gateway.verify_locator(
+                session_id=self.current_session_id, run_id=self.run_id,
+                run_case_id=case_id, browser=case["browser"],
+                attempt_token=self.attempt_token, token=self.current_job_token,
+                locator=proposal.get("locator") if isinstance(proposal, dict) else None,
+            )
+            decision = evaluate_recovery_candidate(
+                proposal=proposal, verification=verification,
+            )
+            if (verification.get("status") != "VERIFIED"
+                    or not decision.accepted or decision.proposal is None
+                    or decision.proposal.action_id != source_step["action_id"]):
+                return {"case_status": "FAILED", "recovery_eligible": False,
+                        "budget_left": max(0, state.get("budget_left", 0) - 1)}
+            healing = self.repository.propose_healing(
+                self.run_id, case_id, proposal_step_id,
+                old_locator=old_locator, proposal=decision.proposal,
+                evidence={"verification": verification, "observation": observation},
+                requester_id=requester_id, now=self._now(),
+            )
+        except StaleRunAttempt:
+            raise
+        except Exception:
+            return {"case_status": "ERROR", "recovery_eligible": False,
+                    "budget_left": max(0, state.get("budget_left", 0) - 1)}
+
+        self.preserve_browser_session = True
+        return {
+            "case_status": "WAITING_APPROVAL",
+            "healing_id": str(healing["healing_id"]),
+            "recovery_eligible": False,
+            "retry_count": retry_count + (1 if previous is not None else 0),
+            "budget_left": max(0, state.get("budget_left", 0) - 1),
+        }
+
+    def bind_approved_healing(self, healing: dict, failed_action_index: int):
+        self.active_healing = {
+            **healing, "failed_action_index": failed_action_index,
+        }
+
+    def _cancel_active_healing(self, *, run_case_id: UUID, reason: str,
+                               continue_retry: bool):
+        if self.active_healing is None:
+            return
+        healing_id = self.active_healing["healing_id"]
+        self.repository.cancel_healing(
+            healing_id, self.run_id, run_case_id, self.attempt_token,
+            worker_id=self.worker_id, reason=reason,
+            continue_retry=continue_retry, now=self._now(),
+        )
+        self.active_healing = None
 
     def assertion_node(self, state: dict):
         case_id = UUID(state["run_case_id"])

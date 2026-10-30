@@ -25,6 +25,11 @@ class RunGraphState(TypedDict, total=False):
     environment_snapshot_id: str
     current_step: int
     retry_count: int
+    healing_id: str
+    failed_action_index: int
+    failed_step_id: str
+    failed_action_id: str
+    recovery_eligible: bool
     budget_left: int
     last_completed_action_id: str | None
     attempt_token: str
@@ -35,12 +40,16 @@ class RunGraphState(TypedDict, total=False):
     planner_status: str
 
 
-def build_run_graph(checkpointer, executor, planner=None, explorer=None):
+def build_run_graph(checkpointer, executor, planner=None, explorer=None,
+                    recoverer=None, requester_id=None):
     """Compile a checkpointed graph whose only executable actions come from published DSL."""
 
     def plan_node(state: RunGraphState):
         case = executor.current_case
         summary = executor.prepare_case(case)
+        if state.get("healing_id"):
+            return {**summary, "schema_version": case.get("schema_version", 1),
+                    "planner_status": "RECOVERY_REPLAY"}
         if planner is None:
             return {**summary, "schema_version": case.get("schema_version", 1),
                     "planner_status": "NOT_CONFIGURED"}
@@ -62,6 +71,8 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None):
                 "budget_left": budget_left - 1, "planner_status": "VALIDATED"}
 
     def explore_node(state: RunGraphState):
+        if state.get("healing_id"):
+            return {"exploration_status": "RECOVERY_REPLAY"}
         if explorer is None:
             return executor.explorer_node(state)
         budget_left = state.get("budget_left", 0)
@@ -88,6 +99,11 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None):
     def execute_node(state: RunGraphState):
         return executor.execute_step_node(state)
 
+    def recover_node(state: RunGraphState):
+        return executor.recovery_node(
+            state, recoverer, requester_id=requester_id,
+        )
+
     def assertion_node(state: RunGraphState):
         if state.get("case_status") in {
             "PAUSED", "CANCELLED", "WAITING_APPROVAL", "ERROR",
@@ -96,6 +112,8 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None):
         return executor.assertion_node(state)
 
     def route(state: RunGraphState):
+        if state.get("recovery_eligible") is True:
+            return "recovery"
         status = state.get("case_status")
         if status in {"PAUSED", "CANCELLED", "WAITING_APPROVAL", "FAILED", "ERROR"}:
             return "end"
@@ -107,14 +125,17 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None):
     graph.add_node("planner", plan_node)
     graph.add_node("explorer", explore_node)
     graph.add_node("execute_step", execute_node)
+    graph.add_node("recovery", recover_node)
     graph.add_node("assertions", assertion_node)
     graph.set_entry_point("planner")
     graph.add_edge("planner", "explorer")
     graph.add_edge("explorer", "execute_step")
     graph.add_conditional_edges(
         "execute_step", route,
-        {"execute": "explorer", "assertions": "assertions", "end": END},
+        {"execute": "explorer", "recovery": "recovery",
+         "assertions": "assertions", "end": END},
     )
+    graph.add_edge("recovery", END)
     graph.add_edge("assertions", END)
     return graph.compile(checkpointer=checkpointer)
 
@@ -158,6 +179,82 @@ def _checkpoint_conninfo():
     return value.replace("postgresql+psycopg://", "postgresql://", 1)
 
 
+def _resume_approved_healing(repository, gateway, executor, *, run_id: UUID,
+                             run_case_id: UUID, case: dict, attempt_token: UUID,
+                             worker_id: str, snapshot: dict):
+    """Rebind an approved Healing to its existing browser session, or fail closed."""
+    healing = repository.load_approved_healing(
+        run_id, run_case_id, attempt_token, worker_id=worker_id,
+    )
+    if healing is None:
+        return None
+
+    def fail(reason):
+        repository.cancel_healing(
+            healing["healing_id"], run_id, run_case_id, attempt_token,
+            worker_id=worker_id, reason=reason, continue_retry=False,
+            manual_reconciliation=True, now=datetime.now(timezone.utc),
+        )
+        raise BrowserGatewayUnavailable("M10_SESSION_NOT_RESTORABLE")
+
+    if healing.get("attempt_matches") is not True:
+        fail("HEALING_ATTEMPT_SCOPE_CHANGED")
+    try:
+        candidate_number = healing.get("candidate_number")
+        session_id = UUID(str(healing["session_id"]))
+        previous_attempt_token = UUID(str(healing["previous_attempt_token"]))
+        healing_id = UUID(str(healing["healing_id"]))
+        UUID(str(healing["step_id"]))
+        action_id = UUID(str(healing["action_id"]))
+    except (KeyError, TypeError, ValueError, AttributeError):
+        fail("HEALING_RESUME_SCOPE_INVALID")
+    if (type(candidate_number) is not int or candidate_number not in {1, 2}
+            or healing.get("session_status") not in {"READY", "BUSY"}
+            or healing.get("browser") != case.get("browser")
+            or not isinstance(healing.get("worker_instance"), str)
+            or not healing["worker_instance"]):
+        fail("HEALING_SESSION_NOT_AVAILABLE")
+    _, steps, _ = executor.case_plans[run_case_id]
+    matches = [index for index, step in enumerate(steps) if step["action_id"] == action_id]
+    if (len(matches) != 1 or healing.get("sequence") != matches[0] + 1
+            or not isinstance(healing.get("new_locator"), dict)):
+        fail("HEALING_ACTION_SCOPE_INVALID")
+    failed_action_index = matches[0]
+    try:
+        rebound = gateway.rebind_session(
+            healing_id=healing_id,
+            previous_attempt_token=previous_attempt_token,
+            attempt_token=attempt_token, session_id=session_id,
+            run_id=run_id, run_case_id=run_case_id,
+            browser=case["browser"], snapshot=snapshot,
+            worker_instance=healing["worker_instance"],
+        )
+        job_token = rebound["job_token"]
+        worker_instance = rebound["worker_instance"]
+        if rebound.get("session_id") != session_id or rebound.get("status") != "READY":
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_RESPONSE")
+        if worker_instance != healing["worker_instance"]:
+            raise BrowserGatewayUnavailable("WORKER_AFFINITY_MISMATCH")
+        repository.rebind_browser_session(
+            session_id, run_case_id, browser=case["browser"],
+            previous_attempt_token=previous_attempt_token,
+            attempt_token=attempt_token, worker_id=worker_id,
+            worker_instance=worker_instance, now=datetime.now(timezone.utc),
+        )
+    except Exception as exc:
+        fail(getattr(exc, "code", "HEALING_SESSION_REBIND_FAILED"))
+
+    executor.bind_browser_session(session_id, job_token)
+    executor.bind_approved_healing(healing, failed_action_index)
+    return {
+        "session_id": session_id, "job_token": job_token,
+        "worker_instance": worker_instance,
+        "current_step": failed_action_index,
+        "retry_count": candidate_number - 1,
+        "healing_id": str(healing_id),
+    }
+
+
 def execute_admitted_run(session_factory, *, run_id: UUID,
                          attempt_token: UUID, worker_id: str):
     repository = RunRepository(session_factory)
@@ -197,6 +294,8 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
                 checkpointer, executor,
                 planner=agent_provider.plan if agent_provider else None,
                 explorer=agent_provider.explore if agent_provider else None,
+                recoverer=agent_provider.recover if agent_provider else None,
+                requester_id=bundle["run"].get("requested_by"),
             )
             for case in bundle["cases"]:
                 if case["status"] in {"PASSED", "FAILED", "ERROR", "CANCELLED"}:
@@ -218,44 +317,60 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
                     case["run_case_id"], "RUNNING", attempt_token=attempt_token,
                     worker_id=worker_id, now=datetime.now(timezone.utc),
                 )
-                session_claim = repository.create_browser_session(
-                    case["run_case_id"], browser=case["browser"],
-                    attempt_token=attempt_token, worker_id=worker_id,
-                    now=datetime.now(timezone.utc),
-                )
-                session_id = session_claim["id"]
+                session_id = None
                 token = None
                 case_status = None
+                resume = None
+                executor.preserve_browser_session = False
                 try:
-                    previous_worker = session_claim.get("worker_instance")
-                    resume_only = bool(session_claim["existing"]
-                                       and previous_worker not in {None, "", "pending"})
-                    token, browser_worker_instance = gateway.create_session(
-                        session_id=session_id, run_id=run_id,
-                        run_case_id=case["run_case_id"], browser=case["browser"],
-                        attempt_token=attempt_token, snapshot=bundle["snapshot"],
-                        resume_only=resume_only,
-                        worker_instance=previous_worker if resume_only else None,
-                    )
-                    repository.set_browser_session_status(
-                        session_id, "READY", attempt_token=attempt_token,
-                        worker_id=worker_id, now=datetime.now(timezone.utc),
-                        worker_instance=browser_worker_instance,
-                    )
-                    executor.bind_browser_session(session_id, token)
                     executor.current_case = case
+                    executor.prepare_case(case)
+                    resume = _resume_approved_healing(
+                        repository, gateway, executor, run_id=run_id,
+                        run_case_id=case["run_case_id"], case=case,
+                        attempt_token=attempt_token, worker_id=worker_id,
+                        snapshot=bundle["snapshot"],
+                    )
+                    if resume is not None:
+                        session_id = resume["session_id"]
+                        token = resume["job_token"]
+                        browser_worker_instance = resume["worker_instance"]
+                    else:
+                        session_claim = repository.create_browser_session(
+                            case["run_case_id"], browser=case["browser"],
+                            attempt_token=attempt_token, worker_id=worker_id,
+                            now=datetime.now(timezone.utc),
+                        )
+                        session_id = session_claim["id"]
+                        previous_worker = session_claim.get("worker_instance")
+                        resume_only = bool(session_claim["existing"]
+                                           and previous_worker not in {None, "", "pending"})
+                        token, browser_worker_instance = gateway.create_session(
+                            session_id=session_id, run_id=run_id,
+                            run_case_id=case["run_case_id"], browser=case["browser"],
+                            attempt_token=attempt_token, snapshot=bundle["snapshot"],
+                            resume_only=resume_only,
+                            worker_instance=previous_worker if resume_only else None,
+                        )
+                        repository.set_browser_session_status(
+                            session_id, "READY", attempt_token=attempt_token,
+                            worker_id=worker_id, now=datetime.now(timezone.utc),
+                            worker_instance=browser_worker_instance,
+                        )
+                        executor.bind_browser_session(session_id, token)
                     budget_left = remaining_budget
                     initial: RunGraphState = {
                         "schema_version": case.get("schema_version", 1),
                         "run_id": str(run_id),
                         "run_case_id": str(case["run_case_id"]),
                         "environment_snapshot_id": str(bundle["snapshot"]["id"]),
-                        "current_step": 0,
-                        "retry_count": 0,
+                        "current_step": resume["current_step"] if resume else 0,
+                        "retry_count": resume["retry_count"] if resume else 0,
                         "budget_left": budget_left,
                         "last_completed_action_id": None,
                         "attempt_token": str(attempt_token),
                         "case_status": "RUNNING",
+                        **({"healing_id": resume["healing_id"]} if resume else {}),
                     }
                     config = {"configurable": {
                         "thread_id": str(run_id),
@@ -267,23 +382,54 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
                         max(0, result.get("budget_left", remaining_budget)),
                     )
                     case_status = result.get("case_status", "ERROR")
+                    if executor.active_healing is not None and case_status not in {
+                        "PAUSED", "CANCELLED", "WAITING_APPROVAL",
+                    }:
+                        active_healing = executor.active_healing
+                        if case_status == "PASSED":
+                            repository.complete_healing(
+                                active_healing["healing_id"], run_id,
+                                case["run_case_id"], attempt_token,
+                                worker_id=worker_id, now=datetime.now(timezone.utc),
+                            )
+                        else:
+                            repository.cancel_healing(
+                                active_healing["healing_id"], run_id,
+                                case["run_case_id"], attempt_token,
+                                worker_id=worker_id,
+                                reason=("REPLAY_OUTCOME_UNCERTAIN" if case_status == "ERROR"
+                                        else "REPLAY_OR_ASSERTION_FAILED"),
+                                continue_retry=False,
+                                manual_reconciliation=case_status == "ERROR",
+                                now=datetime.now(timezone.utc),
+                            )
+                        executor.active_healing = None
                 except BrowserGatewayUnavailable as exc:
-                    repository.set_browser_session_status(
-                        session_id, "LOST", attempt_token=attempt_token,
-                        worker_id=worker_id, now=datetime.now(timezone.utc),
-                    )
-                    if exc.code != "SESSION_NOT_RESTORABLE":
+                    if exc.code == "M10_SESSION_NOT_RESTORABLE":
+                        case_status = "ERROR"
+                    elif exc.code == "SESSION_NOT_RESTORABLE":
+                        if session_id is not None:
+                            try:
+                                repository.set_browser_session_status(
+                                    session_id, "LOST", attempt_token=attempt_token,
+                                    worker_id=worker_id, now=datetime.now(timezone.utc),
+                                )
+                            except StaleRunAttempt:
+                                pass
+                        repository.transition(
+                            run_id, "WAITING_APPROVAL",
+                            expected_status={"PREPARING", "RUNNING"},
+                            now=datetime.now(timezone.utc),
+                            payload={"reason_code": "BROWSER_SESSION_NOT_RESTORABLE"},
+                            attempt_token=attempt_token, worker_id=worker_id,
+                        )
+                        return {"run_id": run_id, "status": "WAITING_APPROVAL"}
+                    else:
                         raise
-                    repository.transition(
-                        run_id, "WAITING_APPROVAL",
-                        expected_status={"PREPARING", "RUNNING"},
-                        now=datetime.now(timezone.utc),
-                        payload={"reason_code": "BROWSER_SESSION_NOT_RESTORABLE"},
-                        attempt_token=attempt_token, worker_id=worker_id,
-                    )
-                    return {"run_id": run_id, "status": "WAITING_APPROVAL"}
                 finally:
-                    if token is not None and case_status != "PAUSED":
+                    preserve = (case_status == "WAITING_APPROVAL"
+                                and executor.preserve_browser_session)
+                    if token is not None and case_status != "PAUSED" and not preserve:
                         try:
                             repository.set_browser_session_status(
                                 session_id, "CLOSING", attempt_token=attempt_token,

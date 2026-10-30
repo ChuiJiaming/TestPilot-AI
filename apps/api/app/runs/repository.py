@@ -608,7 +608,7 @@ class RunRepository:
                 .order_by(RunCaseRecord.browser_name, RunCaseRecord.id)
             ).all()
             return {
-                "run": self._run_dict(run),
+                "run": {**self._run_dict(run), "requested_by": run.requested_by},
                 "policy": dict(run.policy or {}),
                 "snapshot": {
                     "id": snapshot.id, "base_url": snapshot.base_url,
@@ -671,7 +671,7 @@ class RunRepository:
     def start_step(self, run_case_id: UUID, *, action_id: UUID, sequence: int,
                    action_type: str, locator: dict | None, expected: dict | None,
                    replay_policy: str, attempt_token: UUID, worker_id: str,
-                   now: datetime):
+                   now: datetime, recovery_healing_id: UUID | None = None):
         if replay_policy not in {"SAFE", "FIXTURE_ONLY", "NEVER"}:
             raise ValueError("unsupported replay policy")
         with self.session_factory.begin() as session:
@@ -753,6 +753,7 @@ class RunRepository:
                     id=uuid4(), run_case_id=run_case_id, action_id=action_id,
                     sequence=sequence, action_type=action_type, locator=locator,
                     expected=expected, status="PENDING", replay_policy=replay_policy,
+                    recovery_healing_id=recovery_healing_id,
                 )
                 session.add(step)
                 session.flush()
@@ -760,6 +761,7 @@ class RunRepository:
             step.locator = locator
             step.expected = expected
             step.replay_policy = replay_policy
+            step.recovery_healing_id = recovery_healing_id
             step.status = "RUNNING"
             step.attempt_token = attempt_token
             step.started_at = now
@@ -769,6 +771,8 @@ class RunRepository:
                 "run_case_id": str(run_case_id), "step_id": str(step.id),
                 "action_id": str(action_id), "sequence": sequence,
                 "action_type": action_type,
+                **({"recovery_healing_id": str(recovery_healing_id)}
+                   if recovery_healing_id is not None else {}),
             }, now)
             return {"execute": True, "step_id": step.id}
 
@@ -859,6 +863,43 @@ class RunRepository:
             record.lease_expires_at = now + timedelta(seconds=90)
             if status in {"CLOSED", "LOST"}:
                 record.closed_at = now
+            return True
+
+    def rebind_browser_session(self, session_id: UUID, run_case_id: UUID, *,
+                               browser: str, previous_attempt_token: UUID,
+                               attempt_token: UUID, worker_id: str,
+                               worker_instance: str, now: datetime):
+        """Rotate the stored session fence after the Gateway confirms Worker rebind."""
+        if (not worker_instance or len(worker_instance) > 128
+                or previous_attempt_token == attempt_token):
+            raise ValueError("invalid browser session handoff scope")
+        with self.session_factory.begin() as session:
+            run_case = session.get(RunCaseRecord, run_case_id)
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_case.run_id if run_case else False,
+            ).with_for_update())
+            record = session.scalar(select(BrowserSessionRecord).where(
+                BrowserSessionRecord.id == session_id,
+            ).with_for_update())
+            if (run_case is None or run is None or record is None
+                    or run_case.run_id != run.id
+                    or run_case.browser_name != browser
+                    or run_case.attempt_token != attempt_token
+                    or run.attempt_token != attempt_token
+                    or run.lease_owner != worker_id or run.status != "RUNNING"
+                    or record.run_case_id != run_case_id or record.browser != browser
+                    or record.attempt_token != previous_attempt_token
+                    or record.worker_instance != worker_instance
+                    or record.status not in {"READY", "BUSY"}):
+                raise StaleRunAttempt
+            record.attempt_token = attempt_token
+            record.status = "READY"
+            record.heartbeat_at = now
+            record.lease_expires_at = now + timedelta(seconds=90)
+            self._append_event(session, run.id, "run.browser_session_rebound", {
+                "run_case_id": str(run_case_id), "session_id": str(session_id),
+                "browser": browser, "worker_instance": worker_instance,
+            }, now)
             return True
     def get_run(self, actor_id: UUID, run_id: UUID, *, for_write: bool = False):
         with self.session_factory() as session:
@@ -1198,18 +1239,33 @@ class RunRepository:
                 return None
             healing, approval, step = approval_row
             payload = approval.payload if isinstance(approval.payload, dict) else {}
-            if payload.get("attempt_token") != str(attempt_token):
-                return None
+            attempt_matches = payload.get("attempt_token") == str(attempt_token)
             previous_attempt = payload.get("previous_attempt_token")
             try:
                 previous_attempt_token = UUID(str(previous_attempt))
             except (TypeError, ValueError, AttributeError):
-                return None
+                previous_attempt_token = None
             browser_session = session.scalar(select(BrowserSessionRecord).where(
                 BrowserSessionRecord.run_case_id == run_case_id,
                 BrowserSessionRecord.browser == run_case.browser_name,
-                BrowserSessionRecord.attempt_token == previous_attempt_token,
+                BrowserSessionRecord.attempt_token == previous_attempt_token
+                if previous_attempt_token is not None else False,
             ).order_by(BrowserSessionRecord.created_at.desc()))
+            if browser_session is None and payload.get("session_id"):
+                try:
+                    payload_session_id = UUID(str(payload["session_id"]))
+                except (TypeError, ValueError, AttributeError):
+                    payload_session_id = None
+                if payload_session_id is not None:
+                    candidate_session = session.get(BrowserSessionRecord, payload_session_id)
+                    if (candidate_session is not None
+                            and candidate_session.run_case_id == run_case_id
+                            and candidate_session.browser == run_case.browser_name):
+                        browser_session = candidate_session
+            healing_ids = list(session.scalars(select(HealingRecord.id).where(
+                HealingRecord.step_id == step.id,
+            ).order_by(HealingRecord.created_at, HealingRecord.id)))
+            candidate_number = healing_ids.index(healing.id) + 1
             return {
                 "healing_id": healing.id,
                 "approval_id": approval.id,
@@ -1227,6 +1283,8 @@ class RunRepository:
                 "session_id": browser_session.id if browser_session else None,
                 "worker_instance": browser_session.worker_instance if browser_session else None,
                 "session_status": browser_session.status if browser_session else "MISSING",
+                "candidate_number": candidate_number,
+                "attempt_matches": attempt_matches,
             }
 
     def complete_healing(self, healing_id: UUID, run_id: UUID, run_case_id: UUID,
@@ -1272,6 +1330,69 @@ class RunRepository:
             }, now)
             return {"healing_id": healing.id, "new_version_id": version.id,
                     "attempt_token": attempt_token, "version_status": version.review_status}
+
+    def cancel_healing(self, healing_id: UUID, run_id: UUID, run_case_id: UUID,
+                       attempt_token: UUID, *, worker_id: str, reason: str,
+                       continue_retry: bool, now: datetime,
+                       manual_reconciliation: bool = False) -> dict:
+        """Cancel an unusable candidate and optionally establish the next candidate's base locator."""
+        if not isinstance(reason, str) or not reason.strip() or len(reason) > 160:
+            raise ValueError("a bounded Healing cancellation reason is required")
+        with self.session_factory.begin() as session:
+            run = session.scalar(select(TestRunRecord).where(
+                TestRunRecord.id == run_id,
+            ).with_for_update())
+            healing = session.scalar(select(HealingRecord).where(
+                HealingRecord.id == healing_id,
+            ).with_for_update())
+            if run is None or healing is None:
+                raise RunScopeDenied
+            step = session.get(TestStepRecord, healing.step_id)
+            run_case = session.get(RunCaseRecord, run_case_id)
+            if (step is None or run_case is None or step.run_case_id != run_case_id
+                    or run_case.run_id != run_id or run.id != run_id
+                    or run.status not in {"PREPARING", "RUNNING", "PAUSING", "CANCELLING"}
+                    or run.attempt_token != attempt_token or run.lease_owner != worker_id
+                    or run_case.attempt_token != attempt_token):
+                raise StaleRunAttempt
+            if healing.status == "CANCELLED":
+                return {"healing_id": healing.id, "status": healing.status}
+            if healing.status not in {"APPROVED", "PENDING_APPROVAL"}:
+                raise RunApprovalConflict("Healing is no longer active")
+            approval = session.scalar(select(CaseApprovalRecord).where(
+                CaseApprovalRecord.target_kind == "healing",
+                CaseApprovalRecord.target_id == healing.id,
+                CaseApprovalRecord.project_id == run.project_id,
+            ).with_for_update())
+            if approval is None:
+                raise RunScopeDenied
+            healing.status = "CANCELLED"
+            if approval.status in {"PENDING", "APPROVED"}:
+                approval.status = "CANCELLED"
+                approval.decided_at = now
+                approval.reason = reason.strip()
+            step.status = "FAILED"
+            step.finished_at = now
+            if continue_retry:
+                step.locator = healing.new_locator
+            self._audit_approval(
+                session, approval, actor_user_id=None,
+                action="approval.cancelled", now=now,
+                reason_code=reason.strip(),
+            )
+            self._append_event(session, run.id, "run.healing_cancelled", {
+                "healing_id": str(healing.id), "run_case_id": str(run_case.id),
+                "step_id": str(step.id), "reason_code": reason.strip(),
+                "continue_retry": continue_retry,
+            }, now)
+            if manual_reconciliation:
+                self._append_event(session, run.id, "run.manual_reconciliation_required", {
+                    "healing_id": str(healing.id),
+                    "run_case_id": str(run_case.id), "step_id": str(step.id),
+                    "reason_code": reason.strip(),
+                }, now)
+            return {"healing_id": healing.id, "status": healing.status,
+                    "manual_reconciliation": manual_reconciliation}
 
     def expire_healing_approval(self, approval_id: UUID, *, now: datetime) -> bool:
         with self.session_factory() as lookup:

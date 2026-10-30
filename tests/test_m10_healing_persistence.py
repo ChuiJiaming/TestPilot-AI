@@ -328,6 +328,8 @@ def test_approval_rotates_attempt_and_emits_exactly_one_resume_intent(db):
     assert loaded["previous_attempt_token"] == db["attempt_token"]
     assert loaded["session_id"] == db["session_id"]
     assert loaded["worker_instance"] == "browser-worker-a"
+    assert loaded["candidate_number"] == 1
+    assert loaded["attempt_matches"] is True
     assert db["repo"].load_approved_healing(
         db["run_id"], db["run_case_id"], db["attempt_token"], worker_id=worker_id,
     ) is None
@@ -431,3 +433,102 @@ def test_completion_creates_pending_immutable_case_version_for_original_requeste
             db["requester_id"], result["new_version_id"],
             decision="APPROVED", reason="Self review", now=approval_time,
         )
+
+
+def test_rebind_rotates_only_the_approved_session_attempt_and_keeps_worker_affinity(db):
+    request = _propose(db)
+    decision = db["repo"].decide_healing(
+        db["reviewer_id"], request["healing_id"], decision="APPROVE",
+        reason="Verified", now=db["now"] + timedelta(minutes=1),
+    )
+    worker_id = "worker-resumed"
+    with db["sessions"].begin() as session:
+        run = session.get(RunRecord, db["run_id"])
+        run.lease_owner = worker_id
+        run.lease_expires_at = db["now"] + timedelta(minutes=2)
+        run_case = session.get(RunCaseRecord, db["run_case_id"])
+        run_case.lease_owner = worker_id
+        run_case.lease_expires_at = run.lease_expires_at
+
+    assert db["repo"].rebind_browser_session(
+        db["session_id"], db["run_case_id"], browser="chromium",
+        previous_attempt_token=decision["previous_attempt_token"],
+        attempt_token=decision["attempt_token"], worker_id=worker_id,
+        worker_instance="browser-worker-a", now=db["now"] + timedelta(minutes=2),
+    ) is True
+    replay_action_id = uuid5(
+        NAMESPACE_URL,
+        f"testpilot:m10:{db['action_id']}:{request['healing_id']}:1",
+    )
+    replay_step = db["repo"].start_step(
+        db["run_case_id"], action_id=replay_action_id, sequence=4,
+        action_type="click", locator=_proposal(db["action_id"]).locator,
+        expected=None, replay_policy="NEVER",
+        attempt_token=decision["attempt_token"], worker_id=worker_id,
+        now=db["now"] + timedelta(minutes=2),
+        recovery_healing_id=request["healing_id"],
+    )
+    assert replay_step["execute"] is True
+
+    with db["sessions"]() as session:
+        browser_session = session.get(BrowserSessionRecord, db["session_id"])
+        assert browser_session.attempt_token == decision["attempt_token"]
+        assert browser_session.worker_instance == "browser-worker-a"
+        assert browser_session.status == "READY"
+        persisted_replay = session.get(StepRecord, replay_step["step_id"])
+        assert persisted_replay.recovery_healing_id == request["healing_id"]
+        assert session.scalar(select(AgentEventRecord.event_type).where(
+            AgentEventRecord.event_type == "run.browser_session_rebound",
+        )) == "run.browser_session_rebound"
+
+
+def test_cancelled_candidate_becomes_the_next_candidate_base_without_changing_source_dsl(db):
+    first = _propose(db)
+    decision = db["repo"].decide_healing(
+        db["reviewer_id"], first["healing_id"], decision="APPROVE",
+        reason="Verified", now=db["now"] + timedelta(minutes=1),
+    )
+    worker_id = "worker-resumed"
+    with db["sessions"].begin() as session:
+        run = session.get(RunRecord, db["run_id"])
+        run.lease_owner = worker_id
+        run.lease_expires_at = db["now"] + timedelta(minutes=2)
+        run_case = session.get(RunCaseRecord, db["run_case_id"])
+        run_case.lease_owner = worker_id
+        run_case.lease_expires_at = run.lease_expires_at
+
+    first_locator = _proposal(db["action_id"]).locator
+    db["repo"].cancel_healing(
+        first["healing_id"], db["run_id"], db["run_case_id"],
+        decision["attempt_token"], worker_id=worker_id,
+        reason="HEALING_CANDIDATE_FAILED", continue_retry=True, now=db["now"],
+    )
+    second_proposal = _proposal(db["action_id"])
+    second_proposal.locator = {
+        "by": "role", "value": "button", "name": "Submit order",
+    }
+    second_proposal.semantic_descriptor = {"role": "button", "name": "Submit order"}
+    second = db["repo"].propose_healing(
+        db["run_id"], db["run_case_id"], db["step_id"],
+        old_locator=first_locator, proposal=second_proposal,
+        evidence={"verification": {
+            "match_count": 1, "visible": True,
+            "descriptor": {"role": "button", "name": "Submit order"},
+        }},
+        requester_id=db["requester_id"], now=db["now"] + timedelta(seconds=1),
+    )
+
+    with db["sessions"]() as session:
+        source = session.get(CaseVersionRecord, db["version_id"])
+        first_healing = session.get(HealingRecord, first["healing_id"])
+        first_approval = session.get(CaseApprovalRecord, first["approval_id"])
+        original_step = session.get(StepRecord, db["step_id"])
+        second_healing = session.get(HealingRecord, second["healing_id"])
+        assert first_healing.status == "CANCELLED"
+        assert first_approval.status == "CANCELLED"
+        assert original_step.status == "WAITING_APPROVAL"
+        assert original_step.locator == first_locator
+        assert second_healing.old_locator == first_locator
+        assert second_healing.status == "PENDING_APPROVAL"
+        assert source.steps == db["source_steps"]
+        assert source.assertions == db["source_assertions"]

@@ -116,6 +116,69 @@ class BrowserGatewayExecutionClient:
             "worker_instance": self.session_context[session_id]["worker_instance"],
         })
 
+    def verify_locator(self, *, session_id: UUID, run_id: UUID, run_case_id: UUID,
+                       browser: str, attempt_token: UUID, token: str, locator: dict):
+        if session_id not in self.session_context:
+            raise BrowserGatewayUnavailable("BROWSER_SESSION_SCOPE_MISMATCH")
+        fresh_token = self._refresh_token(
+            session_id, run_id, run_case_id, browser, attempt_token, token)
+        result = self._post(
+            f"/internal/v1/browser-sessions/{session_id}/locators/verify", {
+                "run_id": str(run_id), "run_case_id": str(run_case_id),
+                "browser": browser, "attempt_token": str(attempt_token),
+                "job_token": fresh_token,
+                "worker_instance": self.session_context[session_id]["worker_instance"],
+                "locator": locator,
+            },
+        )
+        if (result.get("status") not in {"VERIFIED", "UNVERIFIED"}
+                or type(result.get("match_count")) is not int
+                or type(result.get("visible")) is not bool
+                or not isinstance(result.get("descriptor"), dict)):
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_RESPONSE")
+        return result
+
+    def rebind_session(self, *, healing_id: UUID, previous_attempt_token: UUID,
+                       attempt_token: UUID, session_id: UUID, run_id: UUID,
+                       run_case_id: UUID, browser: str, snapshot: dict,
+                       worker_instance: str):
+        """Consume an approved one-time grant to continue the original Worker page."""
+        if (not worker_instance or len(worker_instance) > 128
+                or previous_attempt_token == attempt_token):
+            raise BrowserGatewayUnavailable("BROWSER_SESSION_SCOPE_MISMATCH")
+        grant = {
+            "healing_id": str(healing_id), "session_id": str(session_id),
+            "run_id": str(run_id), "run_case_id": str(run_case_id),
+            "browser": browser,
+            "previous_attempt_token": str(previous_attempt_token),
+            "attempt_token": str(attempt_token),
+            "worker_instance": worker_instance,
+        }
+        job_token = self._job_token(
+            run_id=run_id, run_case_id=run_case_id, browser=browser,
+            attempt_token=attempt_token, snapshot=snapshot,
+            worker_instance=worker_instance, recovery_handoff=grant,
+        )
+        result = self._post(f"/internal/v1/browser-sessions/{session_id}/rebind", {
+            "run_id": str(run_id), "run_case_id": str(run_case_id),
+            "browser": browser, "attempt_token": str(attempt_token),
+            "job_token": job_token, "worker_instance": worker_instance,
+        })
+        if result.get("status") != "READY":
+            raise BrowserGatewayUnavailable(
+                result.get("error_code", "SESSION_NOT_RESTORABLE"))
+        if (result.get("session_id") != str(session_id)
+                or result.get("worker_instance") != worker_instance
+                or result.get("rebound") is not True):
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_RESPONSE")
+        self.session_context[session_id] = {
+            "run_id": run_id, "run_case_id": run_case_id,
+            "browser": browser, "attempt_token": attempt_token,
+            "snapshot": snapshot, "worker_instance": worker_instance,
+        }
+        return {"job_token": job_token, "worker_instance": worker_instance,
+                "session_id": session_id, "status": "READY"}
+
     def close_session(self, *, session_id: UUID, run_id: UUID, run_case_id: UUID,
                       browser: str, attempt_token: UUID, token: str):
         fresh_token = self._refresh_token(
@@ -143,7 +206,8 @@ class BrowserGatewayExecutionClient:
         )
 
     def _job_token(self, *, run_id, run_case_id, browser, attempt_token, snapshot,
-                   worker_instance: str | None = None):
+                   worker_instance: str | None = None,
+                   recovery_handoff: dict | None = None):
         if snapshot.get("secret_ref_version_id") is not None:
             raise BrowserGatewayUnavailable("SECRET_PROVIDER_UNAVAILABLE")
         base_url = snapshot.get("base_url")
@@ -172,6 +236,8 @@ class BrowserGatewayExecutionClient:
         }
         if worker_instance:
             claims["worker_instance"] = worker_instance
+        if recovery_handoff is not None:
+            claims["recovery_handoff"] = recovery_handoff
         return jwt.encode(claims, self.token_secret, algorithm="HS256")
 
     def _post(self, path: str, payload: dict):
