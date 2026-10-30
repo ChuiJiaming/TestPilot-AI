@@ -230,14 +230,85 @@ class PinnedEgressProxy {
 }
 
 function locatorFor(page, value) {
-  if (!value || typeof value !== "object") throw Object.assign(new Error("INVALID_LOCATOR"), { code: "INVALID_LOCATOR" });
+  if (!value || typeof value !== "object") throw Object.assign(new Error("INVALID_LOCATOR"), { code: "INVALID_LOCATOR", status: 422 });
   if (value.by === "role") return page.getByRole(value.value, { name: value.name ?? undefined, exact: Boolean(value.exact) });
   if (value.by === "label") return page.getByLabel(value.value);
   if (value.by === "placeholder") return page.getByPlaceholder(value.value);
   if (value.by === "text") return page.getByText(value.value);
   if (value.by === "test_id") return page.getByTestId(value.value);
   if (value.by === "css") return page.locator(value.value);
-  throw Object.assign(new Error("UNSUPPORTED_LOCATOR"), { code: "UNSUPPORTED_LOCATOR" });
+  throw Object.assign(new Error("UNSUPPORTED_LOCATOR"), { code: "UNSUPPORTED_LOCATOR", status: 422 });
+}
+
+export async function verifyLocator(session, locator) {
+  const target = locatorFor(session.page, locator);
+  const match_count = await target.count();
+  const visible = match_count === 1 && await target.isVisible();
+  let descriptor = { role: "", name: "", label: "", placeholder: "" };
+  if (match_count === 1) {
+    descriptor = await target.evaluate((element) => {
+      const redact = (value) => String(value || "")
+        .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]")
+        .replace(/\b[A-F0-9]{32,}\b/gi, "[redacted-token]")
+        .replace(/\b(?:\d[ -]?){13,19}\b/g, "[redacted-number]")
+        .trim().slice(0, 160);
+      const tag = element.tagName.toLowerCase();
+      const inputType = (element.getAttribute("type") || "").toLowerCase();
+      const implicitRoles = {
+        a: "link", button: "button", select: "combobox", textarea: "textbox",
+        input: inputType === "button" || inputType === "submit" ? "button"
+          : inputType === "checkbox" ? "checkbox" : inputType === "radio" ? "radio"
+            : inputType === "search" ? "searchbox" : "textbox",
+      };
+      const label = element.labels
+        ? Array.from(element.labels).map((item) => item.innerText || "").join(" ")
+        : "";
+      const labelledBy = (element.getAttribute("aria-labelledby") || "")
+        .split(/\s+/).filter(Boolean)
+        .map((id) => document.getElementById(id)?.innerText || "").join(" ");
+      const placeholder = element.getAttribute("placeholder") || "";
+      const ariaLabel = element.getAttribute("aria-label") || "";
+      const name = ariaLabel || labelledBy || label || element.innerText
+        || placeholder || element.getAttribute("title") || "";
+      return {
+        role: redact(element.getAttribute("role") || implicitRoles[tag] || ""),
+        name: redact(name),
+        label: redact(label || ariaLabel),
+        placeholder: redact(placeholder),
+      };
+    });
+  }
+  const semanticEvidence = Object.values(descriptor).some((value) => typeof value === "string" && value.trim());
+  return {
+    status: match_count === 1 && visible && semanticEvidence ? "VERIFIED" : "UNVERIFIED",
+    match_count, visible: Boolean(visible), descriptor,
+  };
+}
+
+export function applyRecoveryHandoff(session, sessionId, claims, expectedWorker = workerInstance, now = Date.now()) {
+  if (!session || session.expiresAt <= now) {
+    return { status: "ERROR", error_code: "SESSION_NOT_RESTORABLE" };
+  }
+  const grant = claims?.recovery_handoff;
+  const previous = session.claims;
+  const valid = grant && typeof grant === "object"
+    && /^[0-9a-f-]{36}$/i.test(grant.healing_id || "")
+    && grant.session_id === sessionId
+    && grant.run_id === claims.run_id && grant.run_id === previous.run_id
+    && grant.run_case_id === claims.run_case_id && grant.run_case_id === previous.run_case_id
+    && grant.browser === claims.browser && grant.browser === previous.browser
+    && grant.previous_attempt_token === previous.attempt_token
+    && grant.attempt_token === claims.attempt_token
+    && grant.attempt_token !== grant.previous_attempt_token
+    && grant.worker_instance === expectedWorker
+    && (!previous.worker_instance || previous.worker_instance === expectedWorker)
+    && (!claims.worker_instance || claims.worker_instance === expectedWorker)
+    && claims.base_url === previous.base_url
+    && JSON.stringify(claims.allowed_domains) === JSON.stringify(previous.allowed_domains);
+  if (!valid) return { status: "ERROR", error_code: "SESSION_HANDOFF_INVALID" };
+  session.claims = claims;
+  session.expiresAt = now + sessionTtlMs;
+  return { session_id: sessionId, status: "READY", worker_instance: expectedWorker, rebound: true };
 }
 
 function verifyRequestScope(claims, payload, sessionId) {
@@ -306,52 +377,82 @@ async function createSession(payload) {
   }
 }
 
-async function withActionDeduplication(session, actionId, operation) {
+export async function withActionDeduplication(session, attemptToken, actionId, operation) {
   if (typeof actionId !== "string" || !/^[0-9a-f-]{36}$/i.test(actionId)) {
     throw Object.assign(new Error("INVALID_ACTION_ID"), { status: 422 });
   }
-  const existing = session.actions.get(actionId);
+  if (typeof attemptToken !== "string" || !/^[0-9a-f-]{36}$/i.test(attemptToken)) {
+    throw Object.assign(new Error("INVALID_ATTEMPT_TOKEN"), { status: 422 });
+  }
+  const key = `${attemptToken}:${actionId}`;
+  const existing = session.actions.get(key);
   if (existing) return await existing;
   const pending = Promise.resolve().then(operation).catch((error) => ({
     action_id: actionId, status: "ERROR",
     error_code: error.code || "BROWSER_ACTION_FAILED",
   }));
-  session.actions.set(actionId, pending);
+  session.actions.set(key, pending);
   const result = await pending;
-  session.actions.set(actionId, Promise.resolve(result));
+  session.actions.set(key, Promise.resolve(result));
   return result;
 }
 
-async function performAction(session, action) {
+export async function performAction(session, action) {
   if (!action || typeof action !== "object" || Array.isArray(action)) {
     throw Object.assign(new Error("INVALID_ACTION"), { status: 422 });
   }
-  return withActionDeduplication(session, action.action_id, async () => {
+  return withActionDeduplication(session, session.claims.attempt_token, action.action_id, async () => {
     const startedAt = Date.now();
+    let actionDispatched = false;
+    let locatorMatchCount = null;
     try {
       if (action.action === "navigate") {
         if (typeof action.url !== "string" || action.url.length > 2048) throw Object.assign(new Error("INVALID_NAVIGATION"), { code: "INVALID_NAVIGATION" });
         const target = new URL(action.url, session.claims.base_url);
         await assertTarget(target.href, session.claims);
+        actionDispatched = true;
         await session.page.goto(target.href, { waitUntil: "domcontentloaded", timeout: actionTimeoutMs });
       } else if (action.action === "click") {
         const target = locatorFor(session.page, action.locator);
-        if (await target.count() !== 1) throw Object.assign(new Error("LOCATOR_NOT_UNIQUE"), { code: "LOCATOR_NOT_UNIQUE" });
+        locatorMatchCount = await target.count();
+        if (locatorMatchCount !== 1) {
+          return {
+            action_id: action.action_id, status: "FAILED", error_code: "LOCATOR_NOT_UNIQUE",
+            failure_phase: "locator_resolution", action_dispatched: false,
+            match_count: locatorMatchCount, duration_ms: Date.now() - startedAt,
+          };
+        }
+        actionDispatched = true;
         await target.click({ timeout: actionTimeoutMs });
       } else if (action.action === "fill") {
         if (typeof action.value !== "string" || action.value.length > 12000) throw Object.assign(new Error("INVALID_FILL_VALUE"), { code: "INVALID_FILL_VALUE" });
         const target = locatorFor(session.page, action.locator);
-        if (await target.count() !== 1) throw Object.assign(new Error("LOCATOR_NOT_UNIQUE"), { code: "LOCATOR_NOT_UNIQUE" });
+        locatorMatchCount = await target.count();
+        if (locatorMatchCount !== 1) {
+          return {
+            action_id: action.action_id, status: "FAILED", error_code: "LOCATOR_NOT_UNIQUE",
+            failure_phase: "locator_resolution", action_dispatched: false,
+            match_count: locatorMatchCount, duration_ms: Date.now() - startedAt,
+          };
+        }
+        actionDispatched = true;
         await target.fill(action.value, { timeout: actionTimeoutMs });
       } else {
         throw Object.assign(new Error("UNSUPPORTED_ACTION"), { code: "UNSUPPORTED_ACTION" });
       }
       session.expiresAt = Date.now() + sessionTtlMs;
-      return { action_id: action.action_id, status: "SUCCEEDED", duration_ms: Date.now() - startedAt };
+      return {
+        action_id: action.action_id, status: "SUCCEEDED", action_dispatched: actionDispatched,
+        duration_ms: Date.now() - startedAt,
+      };
     } catch (error) {
       return {
         action_id: action.action_id, status: "FAILED",
         error_code: error.code || (error.name === "TimeoutError" ? "ACTION_TIMEOUT" : "BROWSER_ACTION_FAILED"),
+        failure_phase: error.code === "LOCATOR_NOT_UNIQUE" && locatorMatchCount !== null
+          ? "locator_resolution" : "action",
+        action_dispatched: actionDispatched,
+        ...(locatorMatchCount === null ? {} : { match_count: locatorMatchCount }),
         duration_ms: Date.now() - startedAt,
       };
     }
@@ -362,7 +463,7 @@ async function performAssertion(session, assertion) {
   if (!assertion || typeof assertion !== "object" || Array.isArray(assertion)) {
     throw Object.assign(new Error("INVALID_ASSERTION"), { status: 422 });
   }
-  return withActionDeduplication(session, assertion.assert_id, async () => {
+  return withActionDeduplication(session, session.claims.attempt_token, assertion.assert_id, async () => {
     try {
       let matched = false;
       if (assertion.type === "url") {
@@ -431,7 +532,7 @@ async function handle(req, res) {
   const path = req.url || "";
   const create = req.method === "POST" && path === "/internal/v1/browser-sessions/create";
   const match = req.method === "POST"
-    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|close)$/i)
+    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|locators\/verify|rebind|close)$/i)
     : null;
   const drainMatch = req.method === "POST"
     ? path.match(/^\/internal\/workers\/([A-Za-z0-9._-]{1,128})\/drain$/)
@@ -463,6 +564,15 @@ async function handle(req, res) {
     verifyRequestScope(claims, payload, sessionId);
     if (create) return reply(res, 200, await createSession(payload)), true;
     const session = sessions.get(sessionId);
+    if (match[2] === "rebind") {
+      const handoff = applyRecoveryHandoff(session, sessionId, claims, workerInstance, Date.now());
+      if (handoff.error_code === "SESSION_NOT_RESTORABLE") {
+        if (session) await closeSession(sessionId);
+        return reply(res, 200, handoff), true;
+      }
+      if (handoff.error_code) return reply(res, 403, { error: handoff.error_code }), true;
+      return reply(res, 200, handoff), true;
+    }
     if (!session) return reply(res, 410, { error: "BROWSER_SESSION_EXPIRED" }), true;
     if (session.claims.run_id !== claims.run_id
         || session.claims.run_case_id !== claims.run_case_id
@@ -479,6 +589,9 @@ async function handle(req, res) {
     }
     if (match[2] === "observe") {
       return reply(res, 200, await observePage(session)), true;
+    }
+    if (match[2] === "locators/verify") {
+      return reply(res, 200, await verifyLocator(session, payload.locator)), true;
     }
     return reply(res, 200, await closeSession(sessionId)), true;
   } catch (error) {

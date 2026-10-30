@@ -78,7 +78,7 @@ export async function handleBrowserGatewayRequest(req, res, forward) {
   const path = req.url || "";
   const create = req.method === "POST" && path === "/internal/v1/browser-sessions/create";
   const match = req.method === "POST"
-    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|close)$/i)
+    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|locators\/verify|rebind|close)$/i)
     : null;
   const drainMatch = req.method === "POST"
     ? path.match(/^\/internal\/workers\/([A-Za-z0-9._-]{1,128})\/drain$/)
@@ -94,8 +94,28 @@ export async function handleBrowserGatewayRequest(req, res, forward) {
     const claims = verifyJobToken(payload.job_token);
     const sessionId = create ? payload.session_id : match[1];
     verifyScope(claims, payload, sessionId, create);
+    const rebind = !create && match[2] === "rebind";
+    if (rebind) {
+      const grant = claims.recovery_handoff;
+      if (!grant || typeof grant !== "object") {
+        throw Object.assign(new Error("SESSION_HANDOFF_REQUIRED"), { status: 403 });
+      }
+      const validGrant = /^[0-9a-f-]{36}$/i.test(grant.healing_id || "")
+        && grant.session_id === sessionId
+        && grant.run_id === claims.run_id && grant.run_id === payload.run_id
+        && grant.run_case_id === claims.run_case_id && grant.run_case_id === payload.run_case_id
+        && grant.browser === claims.browser && grant.browser === payload.browser
+        && grant.attempt_token === claims.attempt_token && grant.attempt_token === payload.attempt_token
+        && /^[0-9a-f-]{36}$/i.test(grant.previous_attempt_token || "")
+        && grant.previous_attempt_token !== grant.attempt_token
+        && grant.worker_instance === claims.worker_instance
+        && grant.worker_instance === payload.worker_instance;
+      if (!validGrant) {
+        throw Object.assign(new Error("SESSION_HANDOFF_SCOPE_MISMATCH"), { status: 403 });
+      }
+    }
     const result = await forward(path, payload, {
-      create, workerInstance: claims.worker_instance,
+      create, rebind, workerInstance: claims.worker_instance,
     });
     json(res, 200, result);
   } catch (error) {
