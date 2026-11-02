@@ -37,6 +37,7 @@ class TestCaseVersionRecord(AuthBase):
 
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_cases.id"), nullable=False)
+    project_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     dsl_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
     dsl_title: Mapped[str | None] = mapped_column(String)
@@ -157,7 +158,8 @@ class CaseRepository:
                 select(func.max(TestCaseVersionRecord.version)).where(TestCaseVersionRecord.case_id == case_id)
             ) or 0
             record = TestCaseVersionRecord(
-                id=uuid4(), case_id=case_id, version=last_version + 1,
+                id=uuid4(), case_id=case_id, project_id=case.project_id,
+                version=last_version + 1,
                 dsl_schema_version=dsl.schema_version, dsl_title=dsl.title,
                 version_name=dsl.title,
                 steps=[step.model_dump(mode="json") for step in dsl.steps],
@@ -211,7 +213,8 @@ class CaseRepository:
             TestCaseVersionRecord.case_id == case.id,
         )) or 0
         record = TestCaseVersionRecord(
-            id=uuid4(), case_id=case.id, version=latest + 1,
+            id=uuid4(), case_id=case.id, project_id=case.project_id,
+            version=latest + 1,
             dsl_schema_version=source.dsl_schema_version, dsl_title=source.dsl_title,
             version_name=source.version_name or source.dsl_title,
             steps=steps, assertions=deepcopy(source.assertions),
@@ -403,7 +406,8 @@ class CaseRepository:
                 TestCaseVersionRecord.case_id == case_id
             )) or 0
             restored = TestCaseVersionRecord(
-                id=uuid4(), case_id=case_id, version=latest + 1,
+                id=uuid4(), case_id=case_id, project_id=case.project_id,
+                version=latest + 1,
                 dsl_schema_version=source.dsl_schema_version, dsl_title=source.dsl_title,
                 version_name=source.version_name or source.dsl_title,
                 steps=source.steps, assertions=source.assertions,

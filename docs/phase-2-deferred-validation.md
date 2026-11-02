@@ -1,18 +1,18 @@
 # Phase 2 deferred validation and contract register
 
-Status: implementation is in progress. Per owner direction, implementation proceeds before this validation pass. Nothing listed as deferred below is verified by this document. Candidate migrations 008–013 remain unapplied; no Phase 2/3 test, build, migration, browser, security, or deployment command has been run for the current source follow-up.
+Status: implementation is in progress. Per owner direction, implementation proceeded alongside a targeted local validation pass. The current local evidence and environment limits are recorded in [Phase 1–4 unified validation](phase-1-4-unified-validation.md); anything listed below without matching evidence remains unverified. Candidate migrations 008–013 remain unapplied. PostgreSQL migration/upgrade, browser, security, and deployment validation are still open.
 
 ## Unified validation remains deferred while implementation candidates and Phase 3 gaps are completed
 
 Do not mark Phase 2 accepted until every applicable command below has actually run and its output/evidence is attached. A missing external service must be recorded as blocked, never as passed.
 
-Phase 3 now has candidate code for `RUN_REQUESTED` consumption/admission, Run approval request/decision/expiry, budget-gated M07 Planner/Explorer calls with bounded page observations, and M08 mTLS Worker registration/discovery, session affinity, explicit IPv4 target resolution, and resource-limited Compose settings. None has end-to-end evidence yet. Remaining external/source configuration includes M04 provider key/pricing, M07 run-agent model selection, and M08 certificate provisioning plus applying the candidate host egress ACL. M05 DSL v2 remains an explicit divergence from V10.3 §44.2 DSL v3; HTTP contract checks for M05 and M06 remain deferred. Keep the unified validation below deferred until source configuration is complete; the project verification log `docs/TestPilot_AI_V10.3_验证记录.txt` tracks this backlog alongside Phase 1 evidence.
+Phase 3 now has candidate code for `RUN_REQUESTED` consumption/admission, Run approval request/decision/expiry, budget-gated M07 Planner/Explorer calls with bounded page observations, and M08 mTLS Worker registration/discovery, session affinity, explicit IPv4 target resolution, and resource-limited Compose settings. Local repository tests cover admission and recovery paths, but end-to-end evidence is still missing. Remaining external/source configuration includes M04 provider key/pricing, M07 run-agent model selection, and M08 certificate provisioning plus applying the candidate host egress ACL. M05 DSL v2 remains an explicit divergence from V10.3 §44.2 DSL v3; HTTP contract checks for M05 and M06 remain deferred. The full unified validation stays open until external services and source configuration are available; the project verification log `docs/TestPilot_AI_V10.3_验证记录.txt` tracks this backlog alongside Phase 1 evidence.
 
 ### Contract and migration validation
 
 - Reconcile all M04–M06 OpenAPI operationIds and request/response/status/auth/idempotency details against `docs/TestPilot_V10.3.docx`; preserve all baseline operationIds.
 - Validate the OpenAPI document and compare runtime registration with the baseline inventory: `python -m openapi_spec_validator api/openapi.yaml` and `python -m apps.api.scripts.report_runtime_api_coverage`.
-- Regenerate `docs/api-runtime-coverage.md`; its current count snapshot predates the M04–M06 route additions and must not be used as current coverage evidence.
+- `docs/api-runtime-coverage.md` was regenerated on 2026-10-30: 82/101 baseline operations and 10/10 additive operations are registered; the 19 unregistered baseline operations map to M13–M15. This is route-registration evidence only, not contract or behavior acceptance.
 - Review migration provenance/order and run read-only migration checks: `python -m apps.api.scripts.migrate --check`.
 - On disposable PostgreSQL 15 and 18 databases, apply the complete migration chain with the migration runner, inspect schema constraints/indexes, exercise legacy populated upgrade, and rehearse rollback/recovery. Do not use the persistent `testpilot` database for destructive fixtures.
 - Specifically validate candidates `008_case_version_review.sql`, `009_generation_and_scheduling.sql`, `010_run_browser_and_environment_pins.sql`, `011_verification_email_outbox.sql`, `012_phase3_execution.sql`, and `013_run_approval_expiry_index.sql` against empty databases and populated fixtures with historical case versions, approvals, Runs/RunCases, and active/pending users; verify old RunCase references remain unchanged, historical browser values stay unknown/NULL, and mail tokens are encrypted at rest.
@@ -51,7 +51,8 @@ The owner has selected the DSL, submission, and Run approval-expiry decisions ab
 
 ## Phase 3 unified validation handoff
 
-- No Phase 3 tests, migration execution, build, browser flow, security check, or deployment check has been run.
+- Focused local tests for `tests/test_phase3_run_execution.py` and `tests/test_phase3_recovery_persistence.py` passed on 2026-10-30. The complete Phase 3 suite, migration execution, Worker image build, real browser/mTLS/egress flows, security checks, and deployment checks remain unverified.
+- The 2026-10-30 unified local run passed 151 tests and skipped 4 optional-service/database tests. It excludes `tests/test_lifecycle_routes.py` and `tests/test_m10_healing_routes.py` because asyncio's Windows `socketpair` initialization hangs before either route executes; see the linked validation record for the reproduction and limits.
 - Add migrations 012–013 to disposable PostgreSQL 15/18 fresh, upgrade, checksum, constraint, and rollback validation.
 - Run API/repository/outbox/concurrency/lease and DSL/checkpoint recovery coverage, including duplicate RUN_REQUESTED delivery and configured plan capacity.
 - Run web lint/typecheck/unit/build and Run Console pause/resume/cancel/retry, SSE reconnect, ticket renewal, cursor expiration, permissions, and terminal-state flows.

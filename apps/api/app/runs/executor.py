@@ -3,6 +3,12 @@
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from apps.api.app.cases.dsl import DslValidationFailed, validate_dsl
+from apps.api.app.quality.analyzer import (
+    FailureAnalysisError,
+    insufficient_analysis,
+    validate_failure_analysis,
+)
+from apps.api.app.operations.quotas import QuotaExceeded
 from apps.api.app.runs.repository import RunRepository, StaleRunAttempt
 from apps.api.app.runs.recovery import evaluate_recovery_candidate
 
@@ -63,6 +69,7 @@ def normalize_case(case: dict, *, fixtures: dict):
             dsl = validate_dsl(payload, expected_case_id=UUID(str(case["case_id"])))
         except (DslValidationFailed, ValueError, TypeError) as exc:
             raise ExecutionContractError("INVALID_PUBLISHED_DSL_V2") from exc
+        action_ids = set()
         steps = []
         for index, item in enumerate(dsl.steps):
             raw = item.model_dump(mode="json")
@@ -70,6 +77,7 @@ def normalize_case(case: dict, *, fixtures: dict):
                 NAMESPACE_URL,
                 f"testpilot:v2:{case['case_version_id']}:{index + 1}",
             )
+            action_ids.add(action_id)
             action = raw["action"]
             if action == "navigate":
                 replay = "SAFE"
@@ -99,6 +107,13 @@ def normalize_case(case: dict, *, fixtures: dict):
             if raw["type"] == "url":
                 normalized = {"type": "url", "expected": raw["expected"],
                               "match": raw["match"]}
+            elif raw["type"] == "visual":
+                if UUID(str(raw["action_id"])) not in action_ids:
+                    raise ExecutionContractError("INVALID_DSL_VISUAL_ACTION")
+                normalized = {
+                    "type": "visual", "action_id": raw["action_id"],
+                    "baseline_id": raw.get("baseline_id"),
+                }
             else:
                 normalized = {"type": "text", "expected": raw["expected"],
                               "match": raw["match"], "locator": raw["locator"]}
@@ -160,6 +175,9 @@ def normalize_case(case: dict, *, fixtures: dict):
 
     assertions = []
     allowed_severity = {"BLOCKER", "MAJOR", "MINOR", "INFO"}
+    known_action_ids = set()
+    for step in steps:
+        known_action_ids.add(step["action_id"])
     for item in case["assertions"]:
         if not isinstance(item, dict) or item.get("severity") not in allowed_severity:
             raise ExecutionContractError("INVALID_DSL_ASSERTION_SEVERITY")
@@ -175,6 +193,19 @@ def normalize_case(case: dict, *, fixtures: dict):
             assertion = {"type": "url", "expected": expected, "match": "contains"}
         elif kind == "element_visible":
             assertion = {"type": "visible", "locator": _locator_v3(item.get("locator"))}
+        elif kind == "visual":
+            try:
+                action_id = UUID(str(item.get("action_id")))
+                baseline_id = (UUID(str(item["baseline_id"]))
+                               if item.get("baseline_id") is not None else None)
+            except (ValueError, TypeError) as exc:
+                raise ExecutionContractError("INVALID_DSL_VISUAL_ASSERTION") from exc
+            if action_id not in known_action_ids:
+                raise ExecutionContractError("INVALID_DSL_VISUAL_ACTION")
+            assertion = {
+                "type": "visual", "action_id": action_id,
+                "baseline_id": baseline_id,
+            }
         else:
             raise ExecutionContractError("UNSUPPORTED_DSL_V3_ASSERTION")
         assertions.append({
@@ -188,7 +219,8 @@ class DeterministicExecutor:
     """Executes immutable case actions and original assertions through the Gateway."""
 
     def __init__(self, repository: RunRepository, gateway, *, run_id: UUID,
-                 attempt_token: UUID, worker_id: str, snapshot: dict, policy: dict):
+                 attempt_token: UUID, worker_id: str, snapshot: dict, policy: dict,
+                 quality_repository=None):
         self.repository = repository
         self.gateway = gateway
         self.run_id = run_id
@@ -196,6 +228,7 @@ class DeterministicExecutor:
         self.worker_id = worker_id
         self.snapshot = snapshot
         self.policy = policy
+        self.quality_repository = quality_repository
         self.case_plans: dict[UUID, tuple[dict, list, list]] = {}
         self.current_case: dict | None = None
         self.current_session_id: UUID | None = None
@@ -347,6 +380,30 @@ class DeterministicExecutor:
                 safe_result["action_dispatched"] = result["action_dispatched"]
             if type(result.get("match_count")) is int:
                 safe_result["match_count"] = result["match_count"]
+            if (self.quality_repository is not None
+                    and getattr(self.quality_repository, "storage", None) is not None):
+                try:
+                    captured = self.gateway.screenshot(
+                        session_id=self.current_session_id, run_id=self.run_id,
+                        run_case_id=case_id, browser=case["browser"],
+                        attempt_token=self.attempt_token, token=self.current_job_token,
+                    )
+                    artifact = self.quality_repository.save_screenshot(
+                        run_id=self.run_id, run_case_id=case_id,
+                        step_id=persisted["step_id"],
+                        attempt_token=self.attempt_token, worker_id=self.worker_id,
+                        image=captured["image"], viewport=captured["viewport"],
+                        device_scale_factor=captured["device_scale_factor"],
+                        color_scheme=captured["color_scheme"], now=self._now(),
+                    )
+                    safe_result["screenshot_artifact_id"] = str(artifact["id"])
+                except Exception as exc:
+                    error_code = getattr(exc, "code", "SCREENSHOT_UNAVAILABLE")
+                    safe_result["screenshot_error_code"] = (
+                        error_code if isinstance(error_code, str)
+                        and all(character.isalnum() or character in "_.:-" for character in error_code[:80])
+                        else "SCREENSHOT_UNAVAILABLE"
+                    )
             self.repository.finish_step(
                 persisted["step_id"], status="PASSED" if succeeded else "FAILED",
                 result=safe_result, attempt_token=self.attempt_token,
@@ -477,6 +534,9 @@ class DeterministicExecutor:
                 evidence={"verification": verification, "observation": observation},
                 requester_id=requester_id, now=self._now(),
             )
+        except QuotaExceeded:
+            return {"case_status": "FAILED", "recovery_eligible": False,
+                    "budget_left": max(0, state.get("budget_left", 0) - 1)}
         except StaleRunAttempt:
             raise
         except Exception:
@@ -568,29 +628,56 @@ class DeterministicExecutor:
                     raise ExecutionContractError("ASSERTION_ATTEMPT_ALREADY_ACTIVE")
                 return {"case_status": "WAITING_APPROVAL"}
             try:
-                result = self.gateway.assertion(
-                    session_id=self.current_session_id, run_id=self.run_id,
-                    run_case_id=case_id, browser=case["browser"],
-                    attempt_token=self.attempt_token, token=self.current_job_token,
-                    assertion={
-                        "assert_id": str(assertion_id),
-                        **item["assertion"],
-                    },
-                )
-                matched = result.get("matched") is True
-                raw_error = result.get("error_code")
-                error_code = raw_error[:80] if isinstance(raw_error, str) else None
-                result_kind = (
-                    "PASS" if matched else "LOCATOR" if error_code == "LOCATOR_NOT_UNIQUE"
-                    else "INFRA" if error_code else "ASSERTION"
-                )
+                assertion = item["assertion"]
+                if assertion["type"] == "visual":
+                    if self.quality_repository is None:
+                        result = {"status": "ERROR", "error_code": "QUALITY_NOT_CONFIGURED"}
+                    else:
+                        result = self.quality_repository.evaluate_visual_assertion(
+                            run_id=self.run_id, run_case_id=case_id,
+                            attempt_token=self.attempt_token, worker_id=self.worker_id,
+                            case_version_id=UUID(str(case["case_version_id"])),
+                            environment_id=UUID(str(case["environment_id"])),
+                            browser=case["browser"], action_id=UUID(str(assertion["action_id"])),
+                            baseline_id=(UUID(str(assertion["baseline_id"]))
+                                         if assertion.get("baseline_id") else None),
+                            assertion_step_id=stored["step_id"],
+                            now=self._now(),
+                        )
+                    matched = result.get("status") == "PASS"
+                    error_code = result.get("error_code")
+                    result_kind = "PASS" if matched else "INFRA" if result.get("status") == "ERROR" else "ASSERTION"
+                else:
+                    result = self.gateway.assertion(
+                        session_id=self.current_session_id, run_id=self.run_id,
+                        run_case_id=case_id, browser=case["browser"],
+                        attempt_token=self.attempt_token, token=self.current_job_token,
+                        assertion={"assert_id": str(assertion_id), **assertion},
+                    )
+                    matched = result.get("matched") is True
+                    raw_error = result.get("error_code")
+                    error_code = raw_error[:80] if isinstance(raw_error, str) else None
+                    result_kind = (
+                        "PASS" if matched else "LOCATOR" if error_code == "LOCATOR_NOT_UNIQUE"
+                        else "INFRA" if error_code else "ASSERTION"
+                    )
                 step_status = (
                     "PASSED" if matched else "ERROR" if result_kind == "INFRA" else "FAILED"
                 )
+                safe_result = {
+                    "matched": matched, "result_kind": result_kind,
+                    "error_code": error_code,
+                }
+                if assertion["type"] == "visual":
+                    safe_result.update({
+                        key: result[key] for key in (
+                            "visual_status", "pixel_ratio", "changed_pixels", "compared_pixels",
+                            "actual_artifact_id", "baseline_id", "diff_id",
+                        ) if key in result
+                    })
                 self.repository.finish_step(
                     stored["step_id"], status=step_status,
-                    result={"matched": matched, "result_kind": result_kind,
-                            "error_code": error_code},
+                    result=safe_result,
                     attempt_token=self.attempt_token, worker_id=self.worker_id,
                     now=self._now(),
                 )
@@ -608,6 +695,46 @@ class DeterministicExecutor:
                 )
                 return {"case_status": "ERROR"}
         return {"case_status": "FAILED" if failed else "PASSED"}
+
+    def analysis_node(self, state: dict, analyzer=None):
+        """Persist a bounded defect occurrence; model text can never confirm root cause."""
+        if self.quality_repository is None:
+            return {}
+        case_id = UUID(str(state["run_case_id"]))
+        context = self.quality_repository.failure_context(case_id)
+        if context is None:
+            return {"analysis_status": "NO_FAILURE_CONTEXT"}
+        evidence_ids = context.get("evidence_ids", [])
+        analysis = insufficient_analysis(context["failure"], evidence_ids)
+        budget_left = state.get("budget_left", 0)
+        if (analyzer is not None and type(budget_left) is int and budget_left > 0
+                and evidence_ids):
+            if self.consume_agent_budget():
+                budget_left -= 1
+                try:
+                    proposal = analyzer(state, context["failure"], evidence_ids)
+                    analysis = validate_failure_analysis(
+                        proposal, allowed_evidence_ids=evidence_ids)
+                except Exception:
+                    # Invalid or unavailable model output falls back to the deterministic hypothesis.
+                    pass
+            else:
+                budget_left = 0
+        try:
+            defect = self.quality_repository.record_failure(
+                run_case_id=case_id, context=context, analysis=analysis,
+                attempt_token=self.attempt_token, worker_id=self.worker_id,
+                now=self._now())
+        except StaleRunAttempt:
+            raise
+        except Exception:
+            return {"analysis_status": "PERSISTENCE_UNAVAILABLE", "budget_left": budget_left}
+        return {
+            "analysis_status": "RECORDED",
+            "defect_id": str(defect["id"]) if defect else None,
+            "analysis": analysis.model_dump(mode="json"),
+            "budget_left": budget_left,
+        }
 
     @staticmethod
     def _now():

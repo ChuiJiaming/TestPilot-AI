@@ -72,7 +72,8 @@ def test_expired_run_with_unknown_non_idempotent_action_requires_reconciliation(
                 status="active", created_at=now,
             ))
             session.add(CaseVersionRecord(
-                id=version_id, case_id=case_id, version=1, dsl_schema_version=2,
+                id=version_id, case_id=case_id, project_id=project_id,
+                version=1, dsl_schema_version=2,
                 steps=[], assertions=[], changelog="test", created_at=now,
             ))
             session.add(RunRecord(

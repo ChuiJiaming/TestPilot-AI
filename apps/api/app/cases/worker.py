@@ -42,6 +42,26 @@ def create_celery_app() -> Celery:
                 "task": "testpilot.dispatch_generation_outbox",
                 "schedule": 2.0,
             },
+            "publish-report-export-outbox": {
+                "task": "testpilot.dispatch_report_export_outbox",
+                "schedule": 2.0,
+            },
+            "publish-webhook-delivery-outbox": {
+                "task": "testpilot.dispatch_webhook_outbox",
+                "schedule": 2.0,
+            },
+            "publish-notification-delivery-outbox": {
+                "task": "testpilot.dispatch_notification_outbox",
+                "schedule": 2.0,
+            },
+            "recover-expired-report-exports": {
+                "task": "testpilot.recover_report_exports",
+                "schedule": 15.0,
+            },
+            "recover-stuck-webhook-deliveries": {
+                "task": "testpilot.recover_webhook_deliveries",
+                "schedule": 15.0,
+            },
             "scan-due-schedules": {
                 "task": "testpilot.scan_due_schedules",
                 "schedule": 15.0,
@@ -89,7 +109,7 @@ def session_factory():
 
 class GenerationOutboxPublisher:
     def __init__(self, sessions, *, worker_id: str,
-                 event_types=("GENERATION_REQUESTED", "SCHEDULE_TRIGGER_REQUESTED", "RUN_REQUESTED", "RUN_RESUME_REQUESTED")):
+                 event_types=("GENERATION_REQUESTED", "SCHEDULE_TRIGGER_REQUESTED", "RUN_REQUESTED", "RUN_RESUME_REQUESTED", "REPORT_EXPORT_REQUESTED", "WEBHOOK_DELIVERY_REQUESTED")):
         self.sessions = sessions
         self.worker_id = worker_id
         self.event_types = event_types
@@ -146,8 +166,109 @@ class GenerationOutboxPublisher:
 
 @celery_app.task(name="testpilot.dispatch_generation_outbox")
 def dispatch_generation_outbox():
+    return _dispatch_outbox(
+        event_types=("GENERATION_REQUESTED", "SCHEDULE_TRIGGER_REQUESTED", "RUN_REQUESTED", "RUN_RESUME_REQUESTED"),
+    )
+
+
+@celery_app.task(name="testpilot.dispatch_report_export_outbox")
+def dispatch_report_export_outbox():
+    return _dispatch_outbox(event_types=("REPORT_EXPORT_REQUESTED",))
+
+
+@celery_app.task(name="testpilot.dispatch_webhook_outbox")
+def dispatch_webhook_outbox():
+    return _dispatch_outbox(event_types=("WEBHOOK_DELIVERY_REQUESTED",))
+
+
+@celery_app.task(name="testpilot.dispatch_notification_outbox")
+def dispatch_notification_outbox():
+    return _dispatch_outbox(event_types=("NOTIFICATION_DELIVERY_REQUESTED",))
+
+
+_webhook_sender_factory = None
+_notification_sender_factory = None
+
+
+def configure_webhook_sender_factory(factory):
+    """Install the deployment-owned sender factory in this worker process."""
+    if not callable(factory):
+        raise TypeError("webhook sender factory must be callable")
+    global _webhook_sender_factory
+    _webhook_sender_factory = factory
+
+
+def configure_notification_sender_factory(factory):
+    """Install deployment-owned notification channel adapters in this worker."""
+    if not callable(factory):
+        raise TypeError("notification sender factory must be callable")
+    global _notification_sender_factory
+    _notification_sender_factory = factory
+
+
+@celery_app.task(name="testpilot.deliver_notification")
+def deliver_notification(delivery_id: str):
+    from apps.api.app.operations.notifications import NotificationDispatcher
+
+    sender = (
+        _notification_sender_factory()
+        if _notification_sender_factory is not None
+        else None
+    )
+    return NotificationDispatcher(session_factory()).dispatch_delivery_id(
+        UUID(str(delivery_id)),
+        sender=sender,
+        worker_id=f"notification-delivery:{uuid4()}",
+        now=datetime.now(timezone.utc),
+    )
+
+
+@celery_app.task(name="testpilot.deliver_webhook")
+def deliver_webhook(delivery_id: str):
+    from apps.api.app.integrations.delivery import (
+        DeliveryRepository,
+        FixedHostWebhookSender,
+        process_webhook_delivery,
+    )
+    from apps.api.app.integrations.secrets import UnavailableSecretRefResolver
+
+    sender = (
+        _webhook_sender_factory()
+        if _webhook_sender_factory is not None
+        else FixedHostWebhookSender(UnavailableSecretRefResolver())
+    )
+    return process_webhook_delivery(
+        DeliveryRepository(session_factory()),
+        sender,
+        UUID(str(delivery_id)),
+        worker_id=f"webhook-delivery:{uuid4()}",
+        now=datetime.now(timezone.utc),
+    )
+
+
+@celery_app.task(name="testpilot.recover_report_exports")
+def recover_report_exports():
+    from apps.api.app.reports.persistence import ReportRepository
+
+    repository = ReportRepository(session_factory())
+    return repository.requeue_due_exports(now=datetime.now(timezone.utc), limit=100)
+
+
+@celery_app.task(name="testpilot.recover_webhook_deliveries")
+def recover_webhook_deliveries():
+    from apps.api.app.integrations.delivery import DeliveryRepository
+
+    repository = DeliveryRepository(session_factory())
+    return repository.requeue_due_deliveries(
+        now=datetime.now(timezone.utc), limit=100, recovery_after_seconds=60,
+    )
+
+
+def _dispatch_outbox(*, event_types):
     now = datetime.now(timezone.utc)
-    publisher = GenerationOutboxPublisher(session_factory(), worker_id=f"outbox:{uuid4()}")
+    publisher = GenerationOutboxPublisher(
+        session_factory(), worker_id=f"outbox:{uuid4()}", event_types=event_types,
+    )
     events = publisher.claim(now=now)
     published = 0
     for event in events:
@@ -161,6 +282,15 @@ def dispatch_generation_outbox():
             elif event["event_type"] == "RUN_REQUESTED":
                 task_name = "testpilot.consume_run_requested"
                 task_kwargs = {"event_id": event["id"]}
+            elif event["event_type"] == "REPORT_EXPORT_REQUESTED":
+                task_name = "testpilot.render_report_export"
+                task_kwargs = {"export_id": str(UUID(event["payload"]["export_id"]))}
+            elif event["event_type"] == "WEBHOOK_DELIVERY_REQUESTED":
+                task_name = "testpilot.deliver_webhook"
+                task_kwargs = {"delivery_id": str(UUID(event["payload"]["delivery_id"]))}
+            elif event["event_type"] == "NOTIFICATION_DELIVERY_REQUESTED":
+                task_name = "testpilot.deliver_notification"
+                task_kwargs = {"delivery_id": str(UUID(event["payload"]["delivery_id"]))}
             else:
                 task_name = "testpilot.consume_run_resume_requested"
                 task_kwargs = {"event_id": event["id"]}
@@ -174,6 +304,66 @@ def dispatch_generation_outbox():
             publisher.failed(event["id"], now=datetime.now(timezone.utc),
                              error_code=f"dispatch:{type(exc).__name__}")
     return {"claimed": len(events), "published": published}
+
+
+@celery_app.task(name="testpilot.render_report_export")
+def render_report_export(export_id: str):
+    from apps.api.app.reports.persistence import ReportRepository
+    from apps.api.app.reports.rendering import ReportRenderer
+    from apps.api.app.reports.storage import (
+        ReportStorageError, S3ReportStorage, build_report_object_key,
+    )
+
+    now = datetime.now(timezone.utc)
+    export_uuid = UUID(str(export_id))
+    worker_id = f"report-render:{uuid4()}"
+    repository = ReportRepository(session_factory())
+    claim = repository.claim_export(export_uuid, worker_id=worker_id, now=now)
+    if claim is None:
+        return {"claimed": False, "status": "UNCHANGED"}
+
+    try:
+        storage = S3ReportStorage.from_environment()
+        if storage is None:
+            raise ReportStorageError("Report object storage is not configured")
+        snapshot = claim.get("snapshot")
+        if not isinstance(snapshot, dict):
+            raise ReportStorageError("Report snapshot is unavailable")
+        rendered = ReportRenderer().render(snapshot, format=claim["format"])
+        object_key = build_report_object_key(
+            claim["project_id"], claim["run_id"], claim["id"], claim["format"],
+        )
+        digest = storage.put(object_key, rendered.data, content_type=rendered.content_type)
+        artifact_id = uuid4()
+        finished = repository.finish_export(
+            export_uuid, worker_id=worker_id, artifact_id=artifact_id,
+            now=datetime.now(timezone.utc),
+            artifact_metadata={
+                "storage_key": object_key,
+                "content_type": rendered.content_type,
+                "sha256": digest,
+                "size_bytes": len(rendered.data),
+            },
+        )
+        if not finished:
+            return {"claimed": True, "status": "STALE"}
+        return {"claimed": True, "status": "SUCCEEDED", "artifact_id": str(artifact_id)}
+    except Exception as exc:
+        error_code = (
+            "REPORT_STORAGE_UNAVAILABLE" if isinstance(exc, ReportStorageError)
+            else "REPORT_RENDER_FAILED"
+        )
+        failed = repository.fail_export(
+            export_uuid, worker_id=worker_id, error_code=error_code,
+            now=datetime.now(timezone.utc), max_attempts=8,
+        )
+        if not failed:
+            return {"claimed": True, "status": "STALE"}
+        return {
+            "claimed": True,
+            "status": "FAILED" if claim["attempts"] >= 8 else "QUEUED",
+            "error_code": error_code,
+        }
 
 
 
@@ -294,13 +484,19 @@ def expire_healing_approvals():
 @celery_app.task(name="testpilot.execute_admitted_run")
 def execute_admitted_run(run_id: str, attempt_token: str, worker_id: str):
     from apps.api.app.runs.agent import execute_admitted_run as execute_run
+    from apps.api.app.quality.artifacts import S3ArtifactStorage
+    from apps.api.app.quality.persistence import QualityRepository
 
     try:
+        sessions = session_factory()
+        quality_repository = QualityRepository(
+            sessions, storage=S3ArtifactStorage.from_environment())
         return execute_run(
-            session_factory(),
+            sessions,
             run_id=UUID(run_id),
             attempt_token=UUID(attempt_token),
             worker_id=worker_id,
+            quality_repository=quality_repository,
         )
     except Exception as exc:
         from apps.api.app.runs.repository import RunRepository, RunStateConflict, StaleRunAttempt
@@ -320,6 +516,7 @@ def execute_admitted_run(run_id: str, attempt_token: str, worker_id: str):
 @celery_app.task(name="testpilot.generate_scenario")
 def generate_scenario(generation_id: str):
     repository = GenerationRepository(session_factory())
+    from apps.api.app.operations.quotas import QuotaService
 
     class ConfiguredPlanner:
         def generate(self, *, requirement: str, model_name: str):
@@ -332,6 +529,7 @@ def generate_scenario(generation_id: str):
         ConfiguredPlanner(),
         UUID(generation_id),
         now_factory=lambda: datetime.now(timezone.utc),
+        quota_service=QuotaService(session_factory()),
     )
 
 

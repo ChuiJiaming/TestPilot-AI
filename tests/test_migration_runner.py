@@ -15,10 +15,20 @@ class MigrationRunnerTests(unittest.TestCase):
         migrations = repository_migrations(
             Path(__file__).resolve().parents[1] / "db" / "migrations"
         )
-        self.assertEqual(len(migrations), 15)
+        self.assertEqual(len(migrations), 18)
         self.assertEqual(migrations[0].name, "001_schema.sql")
-        self.assertEqual(migrations[-1].name, "015_m10_replay_cancellation.sql")
+        self.assertEqual(migrations[-1].name, "018_m15_operations.sql")
         self.assertNotIn("005_preflight_and_validate.sql", {path.name for path in migrations})
+
+    def test_m13_migration_adds_export_idempotency_and_lease_invariants(self):
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "db" / "migrations" / "017_m13_report_exports.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("uq_report_exports_requester_idempotency", migration)
+        self.assertIn("lease_expires_at", migration)
+        self.assertIn("REPORT_EXPORT_REQUESTED", migration)
+        self.assertIn("snapshot_hash", migration)
 
     def test_normalizes_transaction_wrappers_and_keeps_content_checksum(self):
         with tempfile.TemporaryDirectory() as directory:

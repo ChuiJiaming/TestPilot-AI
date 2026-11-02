@@ -27,6 +27,20 @@ from apps.api.app.cases.planning import GenerationRepository, PlanningRepository
 from apps.api.app.cases.planning_routes import create_planning_router
 from apps.api.app.runs.repository import RunRepository
 from apps.api.app.runs.routes import create_run_router
+from apps.api.app.quality.artifacts import S3ArtifactStorage
+from apps.api.app.quality.persistence import QualityRepository
+from apps.api.app.quality.routes import create_quality_router
+from apps.api.app.reports.persistence import ReportRepository
+from apps.api.app.reports.routes import create_report_router
+from apps.api.app.reports.storage import S3ReportStorage
+from apps.api.app.integrations.persistence import IntegrationRepository
+from apps.api.app.integrations.routes import create_integration_router
+from apps.api.app.integrations.secrets import SecretRefResolver
+from apps.api.app.operations.notifications import NotificationService
+from apps.api.app.operations.routes import create_operations_router
+from apps.api.app.operations.audit import AuditRepository
+from apps.api.app.operations.quotas import QuotaPolicyService
+from apps.api.app.operations.settings import SystemSettingService
 
 
 ReadinessProbe = Callable[[], bool]
@@ -48,6 +62,14 @@ def create_app(
     planning_repository: PlanningRepository | None = None,
     generation_repository: GenerationRepository | None = None,
     run_repository: RunRepository | None = None,
+    quality_repository: QualityRepository | None = None,
+    report_repository: ReportRepository | None = None,
+    integration_repository: IntegrationRepository | None = None,
+    secret_ref_resolver: SecretRefResolver | None = None,
+    notification_service: NotificationService | None = None,
+    audit_repository: AuditRepository | None = None,
+    quota_policy_service: QuotaPolicyService | None = None,
+    system_setting_service: SystemSettingService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="TestPilot AI API",
@@ -94,6 +116,24 @@ def create_app(
         auth_sessions=auth_sessions,
         allowed_origins=allowed_origins,
     ))
+    app.include_router(create_quality_router(
+        repository=quality_repository, auth_sessions=auth_sessions,
+    ))
+    app.include_router(create_report_router(
+        repository=report_repository, auth_sessions=auth_sessions,
+    ))
+    app.include_router(create_integration_router(
+        integration_repository=integration_repository,
+        auth_sessions=auth_sessions,
+        secret_ref_resolver=secret_ref_resolver,
+    ))
+    app.include_router(create_operations_router(
+        notification_service=notification_service,
+        auth_sessions=auth_sessions,
+        audit_repository=audit_repository,
+        quota_policy_service=quota_policy_service,
+        system_setting_service=system_setting_service,
+    ))
     app.state.readiness_probes = dict(readiness_probes or {})
     app.state.expected_readiness_dependencies = (
         "postgresql",
@@ -139,6 +179,14 @@ def create_default_app() -> FastAPI:
 
     redis_client = redis.Redis.from_url(os.environ["TESTPILOT_REDIS_URL"], socket_connect_timeout=2)
     components = build_auth_components(settings=settings, redis_client=redis_client)
+    object_storage = S3ArtifactStorage.from_environment()
+    report_storage = S3ReportStorage.from_environment()
+    quality_repository = QualityRepository(
+        components.environment_snapshots.session_factory,
+        storage=object_storage,
+        report_storage=report_storage,
+    )
+    report_repository = ReportRepository(components.environment_snapshots.session_factory)
 
     def database_ready() -> bool:
         with components.engine.connect():
@@ -147,8 +195,12 @@ def create_default_app() -> FastAPI:
     def redis_ready() -> bool:
         return bool(redis_client.ping())
 
+    def object_storage_ready() -> bool:
+        return bool(object_storage and object_storage.check())
+
     return create_app(
-        {"postgresql": database_ready, "redis": redis_ready},
+        {"postgresql": database_ready, "redis": redis_ready,
+         "object_storage": object_storage_ready},
         email_verification_service=components.service,
         password_hasher=components.password_hasher.hash,
         auth_sessions=components.sessions,
@@ -161,7 +213,24 @@ def create_default_app() -> FastAPI:
         case_repository=components.case_repository,
         planning_repository=components.planning_repository,
         generation_repository=components.generation_repository,
-        run_repository=RunRepository(components.sessions, components.environment_snapshots),
+        run_repository=RunRepository(
+            components.environment_snapshots.session_factory,
+            components.environment_snapshots,
+        ),
+        quality_repository=quality_repository,
+        report_repository=report_repository,
+        notification_service=NotificationService(
+            components.environment_snapshots.session_factory,
+        ),
+        audit_repository=AuditRepository(
+            components.environment_snapshots.session_factory,
+        ),
+        quota_policy_service=QuotaPolicyService(
+            components.environment_snapshots.session_factory,
+        ),
+        system_setting_service=SystemSettingService(
+            components.environment_snapshots.session_factory,
+        ),
     )
 
 

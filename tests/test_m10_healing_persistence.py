@@ -102,7 +102,8 @@ def recovery_db():
             status="active", published_version_id=version_id, created_at=now,
         ))
         session.add(CaseVersionRecord(
-            id=version_id, case_id=case_id, version=1, dsl_schema_version=2,
+            id=version_id, case_id=case_id, project_id=project_id,
+            version=1, dsl_schema_version=2,
             dsl_title="Recovery case", version_name="v1", steps=source_steps,
             assertions=source_assertions, changelog="initial", review_status="APPROVED",
             review_reason=None, created_by=requester_id, created_at=now - timedelta(days=1),
@@ -522,6 +523,24 @@ def test_rebind_rotates_only_the_approved_session_attempt_and_keeps_worker_affin
         assert session.scalar(select(AgentEventRecord.event_type).where(
             AgentEventRecord.event_type == "run.browser_session_rebound",
         )) == "run.browser_session_rebound"
+
+
+def test_get_browser_session_is_project_scoped_and_returns_only_public_metadata(db):
+    repository = db["repo"]
+
+    assert repository.project_id_for_browser_session(db["session_id"]) == db["project_id"]
+    value = repository.get_browser_session(db["requester_id"], db["session_id"])
+    assert value == {
+        "id": db["session_id"],
+        "run_case_id": db["run_case_id"],
+        "worker_instance": "browser-worker-a",
+        "browser": "chromium",
+        "status": "READY",
+    }
+    with pytest.raises(RunScopeDenied):
+        repository.get_browser_session(db["outsider_id"], db["session_id"])
+    assert repository.project_id_for_browser_session(uuid4()) is None
+    assert repository.get_browser_session(db["requester_id"], uuid4()) is None
 
 
 def test_cancelled_candidate_becomes_the_next_candidate_base_without_changing_source_dsl(db):

@@ -1,6 +1,8 @@
 """mTLS client and short-lived scoped job tokens for Browser Gateway actions."""
 
 from datetime import datetime, timedelta, timezone
+import base64
+import binascii
 import os
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -115,6 +117,50 @@ class BrowserGatewayExecutionClient:
             "job_token": fresh_token,
             "worker_instance": self.session_context[session_id]["worker_instance"],
         })
+
+    def screenshot(self, *, session_id: UUID, run_id: UUID, run_case_id: UUID,
+                   browser: str, attempt_token: UUID, token: str):
+        """Fetch one bounded, redacted PNG through the worker-affine Gateway route."""
+        if session_id not in self.session_context:
+            raise BrowserGatewayUnavailable("BROWSER_SESSION_SCOPE_MISMATCH")
+        fresh_token = self._refresh_token(
+            session_id, run_id, run_case_id, browser, attempt_token, token)
+        result = self._post(f"/internal/v1/browser-sessions/{session_id}/screenshot", {
+            "run_id": str(run_id), "run_case_id": str(run_case_id),
+            "browser": browser, "attempt_token": str(attempt_token),
+            "job_token": fresh_token,
+            "worker_instance": self.session_context[session_id]["worker_instance"],
+        })
+        encoded = result.get("image_base64")
+        size_bytes = result.get("size_bytes")
+        viewport = result.get("viewport")
+        dpr = result.get("device_scale_factor")
+        color_scheme = result.get("color_scheme")
+        if (result.get("content_type") != "image/png" or result.get("redacted") is not True
+                or not isinstance(encoded, str) or len(encoded) > 11_184_812
+                or type(size_bytes) is not int or not 1 <= size_bytes <= 8 * 1024 * 1024
+                or not isinstance(viewport, dict)
+                or type(viewport.get("width")) is not int
+                or type(viewport.get("height")) is not int
+                or viewport["width"] < 1 or viewport["height"] < 1
+                or viewport["width"] * viewport["height"] > 32_000_000
+                or type(dpr) not in {int, float} or not 0.5 <= dpr <= 4
+                or color_scheme not in {"light", "dark"}):
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_SCREENSHOT")
+        try:
+            image = base64.b64decode(encoded, validate=True)
+        except (ValueError, binascii.Error) as exc:
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_SCREENSHOT") from exc
+        if (len(image) != size_bytes or len(image) > 8 * 1024 * 1024
+                or not image.startswith(b"\x89PNG\r\n\x1a\n")):
+            raise BrowserGatewayUnavailable("BROWSER_WORKER_INVALID_SCREENSHOT")
+        return {
+            "image": image,
+            "viewport": viewport,
+            "device_scale_factor": float(dpr),
+            "color_scheme": color_scheme,
+            "redacted": True,
+        }
 
     def verify_locator(self, *, session_id: UUID, run_id: UUID, run_case_id: UUID,
                        browser: str, attempt_token: UUID, token: str, locator: dict):

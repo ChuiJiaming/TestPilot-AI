@@ -7,7 +7,7 @@ execute browser runs.
 import base64
 import binascii
 from datetime import datetime, timedelta, timezone
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, Numeric, String, Uuid, and_, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -23,6 +23,7 @@ from apps.api.app.cases.persistence import TestCaseRecord, TestCaseVersionRecord
 from apps.api.app.cases.dsl import Assertion, DslValidationFailed, Step, validate_dsl
 from apps.api.app.cases.scheduling import next_fire_at
 from apps.api.app.environments.persistence import EnvironmentRecord
+from apps.api.app.operations.quotas import QuotaExceeded
 from apps.api.app.tenancy.persistence import ProjectRecord
 
 GENERATION_MAX_AUTOMATIC_RETRIES = 3
@@ -70,7 +71,7 @@ class ScheduleRecord(AuthBase):
 
 class OutboxRecord(AuthBase):
     __tablename__ = "outbox_events"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     aggregate_type: Mapped[str] = mapped_column(String, nullable=False)
     aggregate_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
@@ -163,6 +164,7 @@ class PlannerOutput(BaseModel):
     cost: Decimal = Field(ge=0)
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
+    usage_source: Literal["provider_metadata", "reserved_cap_fallback"] = "provider_metadata"
     proposals: list[ScenarioDraft] = Field(min_length=1)
 
 
@@ -176,7 +178,7 @@ class PlanningConflict(Exception):
 
 class UsageMetricRecord(AuthBase):
     __tablename__ = "usage_metrics"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     organization_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
     run_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id"))
     metric_name: Mapped[str] = mapped_column(String, nullable=False)
@@ -655,9 +657,13 @@ class GenerationRepository:
             job.attempts += 1
             job.lease_expires_at = now + timedelta(seconds=lease_seconds)
             job.attempt_token = uuid4()
+            project = session.get(ProjectRecord, job.project_id)
+            if project is None:
+                raise PlanningConflict("generation project not found")
             session.flush()
             return {"id": job.id, "requirement": job.requirement,
-                    "model_name": job.model_name, "attempt_token": job.attempt_token}
+                    "model_name": job.model_name, "attempt_token": job.attempt_token,
+                    "organization_id": project.organization_id}
 
     def recover_expired_jobs(self, *, now, limit=100):
         """Requeue jobs whose worker lease expired; stale attempt tokens cannot commit results."""
@@ -862,7 +868,8 @@ class GenerationRepository:
                     title=proposal["title"], priority=proposal["priority"], status="draft",
                     published_version_id=None, created_at=now)
                 version_id = uuid4()
-                version = TestCaseVersionRecord(id=version_id, case_id=case_id, version=1,
+                version = TestCaseVersionRecord(id=version_id, case_id=case_id,
+                    project_id=job.project_id, version=1,
                     dsl_schema_version=validated.schema_version, dsl_title=validated.title,
                     version_name=validated.title,
                     steps=[step.model_dump(mode="json") for step in validated.steps],
@@ -886,21 +893,48 @@ class GenerationRepository:
 
 
 def process_generation_job(repository: GenerationRepository, planner: ScenarioPlanner, job_id: UUID,
-                           *, now_factory):
+                           *, now_factory, quota_service=None, reservation_tokens=4096):
     """Process a claimed outbox job; callers must supply an explicitly configured model adapter."""
     claimed = repository.claim_job(job_id, now=now_factory())
     if claimed is None:
         return None
+    call_id = uuid5(NAMESPACE_URL, f"testpilot-generation:{job_id}:{claimed['attempt_token']}")
+    reserved = False
     try:
+        if quota_service is None or claimed.get("organization_id") is None:
+            raise RuntimeError("QUOTA_SERVICE_NOT_CONFIGURED")
+        quota_service.reserve(
+            claimed["organization_id"], call_id=call_id, run_id=None,
+            requested_tokens=reservation_tokens, now=now_factory(),
+        )
+        reserved = True
         output = PlannerOutput.model_validate(
             planner.generate(requirement=claimed["requirement"], model_name=claimed["model_name"])
         )
+        if output.usage_source == "reserved_cap_fallback":
+            consumed_tokens = reservation_tokens
+        else:
+            consumed_tokens = output.input_tokens + output.output_tokens
+        quota_service.settle(
+            call_id, consumed_tokens=consumed_tokens, usage_source=output.usage_source,
+            now=now_factory(),
+        )
+        reserved = False
         proposals = [GeneratedScenario(proposal_id=uuid4(), **item.model_dump()) for item in output.proposals]
         return repository.complete_job(job_id, attempt_token=claimed["attempt_token"],
             output=output, proposals=proposals, now=now_factory())
+    except QuotaExceeded:
+        if reserved:
+            quota_service.release(call_id, now=now_factory())
+        return repository.fail_job(job_id, attempt_token=claimed["attempt_token"],
+            error_code="QUOTA_EXCEEDED", now=now_factory())
     except ValidationError:
+        if reserved:
+            quota_service.release(call_id, now=now_factory())
         return repository.fail_job(job_id, attempt_token=claimed["attempt_token"],
             error_code="DSL_VALIDATION_FAILED", now=now_factory())
     except Exception:
+        if reserved:
+            quota_service.release(call_id, now=now_factory())
         return repository.fail_job(job_id, attempt_token=claimed["attempt_token"],
             error_code="MODEL_PROVIDER_FAILED", now=now_factory())

@@ -18,6 +18,9 @@ function boundedInteger(name, fallback, minimum, maximum) {
 const maxSessions = boundedInteger("TESTPILOT_BROWSER_MAX_SESSIONS", 4, 1, 64);
 const sessionTtlMs = boundedInteger("TESTPILOT_BROWSER_SESSION_TTL_MS", 900000, 60000, 3600000);
 const actionTimeoutMs = boundedInteger("TESTPILOT_BROWSER_ACTION_TIMEOUT_MS", 30000, 1000, 120000);
+const maxScreenshotBytes = boundedInteger(
+  "TESTPILOT_BROWSER_SCREENSHOT_MAX_BYTES", 8 * 1024 * 1024, 1024, 8 * 1024 * 1024,
+);
 const maxBodyBytes = 32 * 1024;
 const workerInstance = process.env.TESTPILOT_WORKER_INSTANCE || "browser-worker";
 if (!/^[A-Za-z0-9._-]{1,128}$/.test(workerInstance)) throw new Error("Invalid TESTPILOT_WORKER_INSTANCE");
@@ -354,7 +357,12 @@ async function createSession(payload) {
       proxy: { server: "http://127.0.0.1:" + proxyPort },
       timeout: 60000,
     });
-    const context = await browser.newContext({ serviceWorkers: "block" });
+    const context = await browser.newContext({
+      serviceWorkers: "block",
+      viewport: { width: 1280, height: 720 },
+      deviceScaleFactor: 1,
+      colorScheme: "light",
+    });
     await context.route("**/*", async (route) => {
       const url = route.request().url();
       if (url === "about:blank") return route.continue();
@@ -395,6 +403,68 @@ export async function withActionDeduplication(session, attemptToken, actionId, o
   const result = await pending;
   session.actions.set(key, Promise.resolve(result));
   return result;
+}
+
+export async function captureScreenshot(session) {
+  if (!session?.page || typeof session.page.screenshot !== "function") {
+    throw Object.assign(new Error("BROWSER_SESSION_SCOPE_MISMATCH"), {
+      status: 403, code: "BROWSER_SESSION_SCOPE_MISMATCH",
+    });
+  }
+  const viewport = session.page.viewportSize();
+  if (!viewport || !Number.isInteger(viewport.width) || !Number.isInteger(viewport.height)
+      || viewport.width < 1 || viewport.height < 1
+      || viewport.width * viewport.height > 32_000_000) {
+    throw Object.assign(new Error("SCREENSHOT_VIEWPORT_INVALID"), {
+      status: 422, code: "SCREENSHOT_VIEWPORT_INVALID",
+    });
+  }
+  const formControlSelector = "input,textarea,select,[contenteditable='true']";
+  const formControlMasks = session.page.frames()
+    .map((frame) => frame.locator(formControlSelector));
+  const [png, display] = await Promise.all([
+    session.page.screenshot({
+      type: "png",
+      scale: "css",
+      animations: "disabled",
+      caret: "hide",
+      mask: formControlMasks,
+      maskColor: "#000000",
+    }),
+    session.page.evaluate(() => ({
+      device_scale_factor: window.devicePixelRatio,
+      color_scheme: matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+    })),
+  ]);
+  if (!Buffer.isBuffer(png) || png.length < 8
+      || !png.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
+    throw Object.assign(new Error("SCREENSHOT_INVALID"), {
+      status: 503, code: "SCREENSHOT_INVALID",
+    });
+  }
+  if (png.length > maxScreenshotBytes) {
+    throw Object.assign(new Error("SCREENSHOT_TOO_LARGE"), {
+      status: 413, code: "SCREENSHOT_TOO_LARGE",
+    });
+  }
+  const dpr = display?.device_scale_factor;
+  const colorScheme = display?.color_scheme;
+  if (typeof dpr !== "number" || !Number.isFinite(dpr) || dpr < 0.5 || dpr > 4
+      || !["light", "dark"].includes(colorScheme)) {
+    throw Object.assign(new Error("SCREENSHOT_CONTEXT_INVALID"), {
+      status: 503, code: "SCREENSHOT_CONTEXT_INVALID",
+    });
+  }
+  session.expiresAt = Date.now() + sessionTtlMs;
+  return {
+    content_type: "image/png",
+    image_base64: png.toString("base64"),
+    size_bytes: png.length,
+    viewport: { width: viewport.width, height: viewport.height },
+    device_scale_factor: dpr,
+    color_scheme: colorScheme,
+    redacted: true,
+  };
 }
 
 export async function performAction(session, action) {
@@ -532,7 +602,7 @@ async function handle(req, res) {
   const path = req.url || "";
   const create = req.method === "POST" && path === "/internal/v1/browser-sessions/create";
   const match = req.method === "POST"
-    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|locators\/verify|rebind|close)$/i)
+    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|screenshot|locators\/verify|rebind|close)$/i)
     : null;
   const drainMatch = req.method === "POST"
     ? path.match(/^\/internal\/workers\/([A-Za-z0-9._-]{1,128})\/drain$/)
@@ -589,6 +659,9 @@ async function handle(req, res) {
     }
     if (match[2] === "observe") {
       return reply(res, 200, await observePage(session)), true;
+    }
+    if (match[2] === "screenshot") {
+      return reply(res, 200, await captureScreenshot(session)), true;
     }
     if (match[2] === "locators/verify") {
       return reply(res, 200, await verifyLocator(session, payload.locator)), true;

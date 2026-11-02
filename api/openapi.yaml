@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: TestPilot AI V10.3 scoped API contract candidate
   version: 10.3.0-scope-candidate
-  description: Preserves the 101 baseline operation inventory and adds reviewed auth lifecycle operations. Phase 2 runtime additions remain subject to contract reconciliation. Duplicate query parameters corrected; auth/role scope reconciled and SSE/download media types documented. DTOs require backend conformance before freeze.
+  description: Preserves all 101 baseline operation IDs and adds reviewed auth lifecycle and M11–M12 quality operations. Duplicate query parameters corrected; auth/role scope reconciled; private artifact bytes and quality DTOs are documented. DTOs require backend conformance before freeze.
 servers:
 - url: https://testpilot.example.com
 paths:
@@ -3511,6 +3511,63 @@ paths:
       x-required-permissions:
       - run:create
       x-idempotency-scope: organization_id+source_repository+commit_sha+plan_id+environment_id+sorted(browser_matrix)+trigger_source+request_intent+Idempotency-Key
+  /api/v1/ci/trigger:
+    post:
+      tags: [Runs & Approvals]
+      summary: Trigger an idempotent CI Run
+      operationId: post__api_v1_ci_trigger
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CITriggerRequestV10'}
+      responses:
+        '202':
+          description: Run queued or existing matching Run returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+        '401': {description: Authentication required}
+        '403': {description: Run creation scope denied}
+        '404': {description: Project or referenced resource not found}
+        '409': {description: Run admission conflict}
+        '422': {description: Validation failed}
+      x-tenant-scope: project
+      x-required-permissions: [run:create]
+      x-idempotency-scope: organization_id+repository+commit_sha+plan_id+environment_id+sorted(browser_matrix)+trigger_source+request_intent
+  /api/v1/test-runs/{id}/gate:
+    get:
+      tags: [Runs & Approvals]
+      summary: Read deterministic machine gate for a Run
+      operationId: get__api_v1_test_runs__id__gate
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: blocking_severity
+        in: query
+        required: false
+        schema:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW]
+          default: HIGH
+      responses:
+        '200':
+          description: Deterministic assertion-based gate result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunGateV10'}
+        '401': {description: Authentication required}
+        '403': {description: Run read scope denied}
+        '404': {description: Run not found or scoped out}
+        '422': {description: Invalid blocking severity}
+      x-tenant-scope: project/resource-derived
+      x-required-permissions: [run:read]
   /api/v1/test-runs/{id}:
     get:
       tags:
@@ -4611,8 +4668,12 @@ paths:
       - BearerAuth: []
       responses:
         '200':
-          description: Artifact binary for authorized user (or 302 short-lived signed URL)
+          description: Authorized private artifact bytes; object keys are never exposed
           content:
+            image/png:
+              schema:
+                type: string
+                format: binary
             application/octet-stream:
               schema:
                 type: string
@@ -4665,8 +4726,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-        '302':
-          description: Short-lived signed URL; never persist public URL
+        '503':
+          description: Private object storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
       parameters:
       - in: path
         name: id
@@ -4695,6 +4760,78 @@ paths:
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
       x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
+      x-required-permissions:
+      - resource:read
+  /api/v1/projects/{project_id}/artifacts:
+    get:
+      tags:
+      - Reports & Defects
+      operationId: get__api_v1_projects__id__artifacts
+      summary: List private artifacts in a project
+      security:
+      - BearerAuth: []
+      parameters:
+      - in: path
+        name: project_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 30
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 512
+      - in: query
+        name: artifact_type
+        required: false
+        schema:
+          type: string
+          enum: [screenshot, video, trace, har, console, report, diff]
+      responses:
+        '200':
+          description: Project-scoped artifact metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPage'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '403':
+          description: Project permission denied
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '404':
+          description: Project not found or inaccessible
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '422':
+          description: Invalid request
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '503':
+          description: Quality service is not configured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      x-tenant-scope: project/resource-derived
       x-required-permissions:
       - resource:read
   /api/v1/projects/{id}/defects:
@@ -5485,7 +5622,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Integration'
+                $ref: '#/components/schemas/IntegrationPage'
         '400':
           description: Invalid request
           content:
@@ -5655,15 +5792,15 @@ paths:
       tags:
       - Integrations & Operations
       operationId: post__api_v1_webhooks__provider
-      summary: 'Integrations & Operations: POST /webhooks/{provider}'
+      summary: Receive a signed provider Webhook event
       security: []
       responses:
-        '200':
-          description: Success
+        '202':
+          description: Verified event accepted or deduplicated
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Project'
+                $ref: '#/components/schemas/WebhookReceiptV10'
         '400':
           description: Invalid request
           content:
@@ -5689,13 +5826,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '409':
-          description: Conflicting state
+          description: Nonce replay or ambiguous provider integration
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-        '422':
-          description: Validation failed
+        '413':
+          description: Webhook body exceeds 1 MiB
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProblemDetails'}
+        '503':
+          description: Secret provider unavailable
           content:
             application/json:
               schema:
@@ -5718,7 +5860,25 @@ paths:
         required: true
         schema:
           type: string
-          format: string
+          maxLength: 80
+          pattern: '^[A-Za-z0-9_-]+$'
+      - in: header
+        name: X-TestPilot-Timestamp
+        required: true
+        schema: {type: string, pattern: '^[0-9]{10}$'}
+      - in: header
+        name: X-TestPilot-Nonce
+        required: true
+        schema: {type: string, minLength: 16, maxLength: 256}
+      - in: header
+        name: X-TestPilot-Signature
+        required: true
+        schema: {type: string, pattern: '^sha256=[0-9a-f]{64}$'}
+      - in: header
+        name: X-TestPilot-Integration-Id
+        required: false
+        description: Required when more than one enabled integration uses this provider name.
+        schema: {type: string, format: uuid}
       requestBody:
         required: true
         content:
@@ -5732,7 +5892,69 @@ paths:
       x-idempotency-policy: not-required
       x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions: []
-      x-auth-policy: PUBLIC_OR_VERIFIED_HMAC
+      x-auth-policy: PUBLIC_ROUTE_WITH_REQUIRED_VERIFIED_HMAC
+      x-webhook-signing: 'HMAC-SHA256(timestamp + newline + nonce + newline + exact raw body)'
+      x-maximum-body-bytes: 1048576
+  /api/v1/webhooks/{id}/deliveries:
+    get:
+      tags: [Integrations & Operations]
+      summary: List scoped Webhook delivery history
+      operationId: get__api_v1_webhooks__id__deliveries
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Organization-scoped delivery history including bounded attempt evidence
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookDeliveryPageV10'}
+        '401': {description: Authentication required}
+        '403': {description: Organization read scope denied}
+        '404': {description: Integration not found or scoped out}
+        '422': {description: Validation failed}
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+  /api/v1/webhooks/{id}/deliveries/{delivery_id}/retry:
+    post:
+      tags: [Integrations & Operations]
+      summary: Queue one manual retry for a failed Webhook delivery
+      operationId: post__api_v1_webhooks__id__deliveries__delivery_id__retry
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: delivery_id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Retry queued or the existing pending retry returned
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WebhookRetryV10'}
+        '401': {description: Authentication required}
+        '403': {description: Organization administrator permission denied}
+        '404': {description: Delivery not found or scoped out}
+        '409': {description: Delivery state is not retryable}
+      x-tenant-scope: organization
+      x-required-permissions: [organization:write]
   /api/v1/notifications:
     get:
       tags:
@@ -5743,13 +5965,11 @@ paths:
       - BearerAuth: []
       responses:
         '200':
-          description: Success
+          description: Notifications owned by the authenticated user
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Notification'
+                $ref: '#/components/schemas/NotificationPage'
         '400':
           description: Invalid request
           content:
@@ -5808,16 +6028,15 @@ paths:
           type: integer
           minimum: 1
           maximum: 100
-          default: 30
+          default: 50
       - in: query
         name: cursor
         schema:
           type: string
           minLength: 1
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
-      x-project-scope: organization-or-platform
+      x-contract-status: V10.3_IMPLEMENTED
+      x-project-scope: user
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:read
   /api/v1/notifications/{id}/read:
@@ -5830,11 +6049,11 @@ paths:
       - BearerAuth: []
       responses:
         '200':
-          description: Success
+          description: Notification marked as read
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Notification'
+                $ref: '#/components/schemas/NotificationReadResult'
         '400':
           description: Invalid request
           content:
@@ -5890,22 +6109,45 @@ paths:
         schema:
           type: string
           format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/V102PostApiV1NotificationsIdReadInput'
-      x-required-roles:
-      - project_admin
-      - tester
-      x-tenant-scope: project/resource-derived
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
-      x-project-scope: organization-or-platform
+      x-tenant-scope: user
+      x-contract-status: V10.3_IMPLEMENTED
+      x-project-scope: user
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:write
+  /api/v1/notification-deliveries:
+    get:
+      tags: [Integrations & Operations]
+      summary: List exhausted notification deliveries visible to the owner or organization administrator
+      operationId: get__api_v1_notification_deliveries
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema: {type: string, enum: [DEAD], default: DEAD}
+      - name: organization_id
+        in: query
+        required: false
+        schema: {type: string, format: uuid}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, minimum: 1, maximum: 100, default: 100}
+      responses:
+        '200':
+          description: Exhausted deliveries and the latest safe error code
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeadNotificationDeliveryPage'}
+        '401': {description: Authentication required}
+        '403': {description: API token scope denied}
+        '422': {description: Invalid query values}
+        '503': {description: Operations service is not configured}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: notification-owner-or-organization-admin
+      x-required-permissions: [resource:read]
   /api/v1/organizations/{id}/audit-logs:
     get:
       tags:
@@ -5920,7 +6162,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuditLog'
+                $ref: '#/components/schemas/AuditPage'
         '400':
           description: Invalid request
           content:
@@ -5988,14 +6230,31 @@ paths:
         schema:
           type: string
           minLength: 1
+      - in: query
+        name: action
+        schema: {type: string, maxLength: 160}
+      - in: query
+        name: resource_type
+        schema: {type: string, maxLength: 160}
+      - in: query
+        name: actor_user_id
+        schema: {type: string, format: uuid}
+      - in: query
+        name: resource_id
+        schema: {type: string, format: uuid}
+      - in: query
+        name: created_at_from
+        schema: {type: string, format: date-time}
+      - in: query
+        name: created_at_to
+        schema: {type: string, format: date-time}
       x-required-roles:
       - org_admin
       - org_member
       x-tenant-scope: organization
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - organization:read
   /api/v1/organizations/{id}/usage:
@@ -6012,7 +6271,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Usage'
+                $ref: '#/components/schemas/UsagePage'
         '400':
           description: Invalid request
           content:
@@ -6068,28 +6327,21 @@ paths:
         schema:
           type: string
           format: uuid
-      - name: limit
+      - name: date_from
         in: query
         required: false
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 30
-      - name: cursor
+        schema: {type: string, format: date-time}
+      - name: date_to
         in: query
         required: false
-        schema:
-          type: string
-          minLength: 1
+        schema: {type: string, format: date-time}
       x-required-roles:
       - org_admin
       - org_member
       x-tenant-scope: organization
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - organization:read
   /api/v1/organizations/{id}/quotas:
@@ -6162,28 +6414,13 @@ paths:
         schema:
           type: string
           format: uuid
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 30
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 1
       x-required-roles:
       - org_admin
       - org_member
       x-tenant-scope: organization
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - organization:read
     put:
@@ -6260,14 +6497,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/V102PutApiV1OrganizationsIdQuotasInput'
+              $ref: '#/components/schemas/QuotaPolicyUpdate'
       x-required-roles:
       - org_admin
       x-tenant-scope: organization
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - organization:write
   /api/v1/admin/system-settings:
@@ -6284,9 +6520,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Project'
+                $ref: '#/components/schemas/SystemSettingsPage'
         '400':
           description: Invalid request
           content:
@@ -6338,25 +6572,9 @@ paths:
       x-required-roles:
       - platform_admin
       x-tenant-scope: platform
-      parameters:
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 30
-      - name: cursor
-        in: query
-        required: false
-        schema:
-          type: string
-          minLength: 1
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - platform:admin
   /api/v1/admin/verification-email-outbox/dead:
@@ -6453,7 +6671,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Project'
+                $ref: '#/components/schemas/SystemSettingChange'
         '400':
           description: Invalid request
           content:
@@ -6508,20 +6726,20 @@ paths:
         required: true
         schema:
           type: string
-          format: string
+          minLength: 1
+          maxLength: 80
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/V102PutApiV1AdminSystemSettingsKeyInput'
+              $ref: '#/components/schemas/SystemSettingPathChangeRequest'
       x-required-roles:
       - platform_admin
       x-tenant-scope: platform
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - platform:admin
   /api/v1/secret-refs:
@@ -7331,8 +7549,8 @@ paths:
               $ref: '#/components/schemas/ReqVisualBaselinesProposals'
       parameters: []
       responses:
-        '200':
-          description: Success
+        '201':
+          description: Baseline proposal created in PENDING state
           content:
             application/json:
               schema:
@@ -7385,12 +7603,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-        '201':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VisualBaseline'
       x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
       x-project-scope: project
       x-idempotency-policy: not-required
@@ -7570,6 +7782,77 @@ paths:
       x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:read
+  /api/v1/reports/{id}/exports:
+    post:
+      tags:
+      - Reports & Defects
+      operationId: post__api_v1_reports__id__exports
+      summary: Create an asynchronous export for an immutable report
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 160
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - format
+              properties:
+                format:
+                  type: string
+                  enum: [html, pdf, json, junit]
+      responses:
+        '202':
+          description: Export request queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportExport'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Scope or role denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Report not found or scoped out
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '422':
+          description: Validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+      x-contract-status: V10.3_ADDITIVE
+      x-project-scope: resource-derived
+      x-idempotency-policy: required
+      x-required-permissions:
+      - resource:write
   /api/v1/notifications/preferences:
     get:
       tags:
@@ -7581,28 +7864,13 @@ paths:
       x-tenant-scope: project/resource-derived
       security:
       - BearerAuth: []
-      parameters:
-      - in: query
-        name: limit
-        schema:
-          type: integer
-          minimum: 1
-          maximum: 100
-          default: 30
-      - in: query
-        name: cursor
-        schema:
-          type: string
-          minLength: 1
       responses:
         '200':
-          description: Success
+          description: Preferences for the authenticated user
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Notification'
+                $ref: '#/components/schemas/NotificationPreferencePage'
         '400':
           description: Invalid request
           content:
@@ -7651,10 +7919,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
-      x-project-scope: organization-or-platform
+      x-contract-status: V10.3_IMPLEMENTED
+      x-project-scope: user
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:read
     put:
@@ -7673,15 +7940,15 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ReqNotificationsPreferences'
+              $ref: '#/components/schemas/NotificationPreferenceUpdate'
       parameters: []
       responses:
         '200':
-          description: Success
+          description: Updated preferences for the authenticated user
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Notification'
+                $ref: '#/components/schemas/NotificationPreferencePage'
         '400':
           description: Invalid request
           content:
@@ -7730,10 +7997,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
-      x-project-scope: organization-or-platform
+      x-contract-status: V10.3_IMPLEMENTED
+      x-project-scope: user
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:write
   /api/v1/audit-logs/export:
@@ -7752,7 +8018,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/V102PostApiV1AuditLogsExportInput'
+              $ref: '#/components/schemas/AuditExportRequest'
       parameters: []
       responses:
         '200':
@@ -7760,7 +8026,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/AuditLog'
+                $ref: '#/components/schemas/AuditExport'
         '400':
           description: Invalid request
           content:
@@ -7809,12 +8075,229 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
-      x-contract-status: V10.3_STATIC_REVIEW_PENDING_BACKEND_CONFORMANCE
+      x-contract-status: V10.3_IMPLEMENTED
       x-project-scope: organization-or-platform
       x-idempotency-policy: not-required
-      x-acceptance: Requires backend handler, generated client compilation and contract test to freeze
       x-required-permissions:
       - resource:write
+  /api/v1/audit-logs:
+    get:
+      tags: [Integrations & Operations]
+      summary: List organization audit entries with filters and keyset paging
+      operationId: get__api_v1_audit_logs
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      - name: action
+        in: query
+        schema: {type: string, maxLength: 160}
+      - name: resource_type
+        in: query
+        schema: {type: string, maxLength: 160}
+      - name: actor_user_id
+        in: query
+        schema: {type: string, format: uuid}
+      - name: resource_id
+        in: query
+        schema: {type: string, format: uuid}
+      - name: created_at_from
+        in: query
+        schema: {type: string, format: date-time}
+      - name: created_at_to
+        in: query
+        schema: {type: string, format: date-time}
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      - name: cursor
+        in: query
+        schema: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: Organization-scoped audit entries
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditPage'}
+        '401': {description: Authentication required}
+        '403': {description: Organization read permission denied}
+        '422': {description: Invalid filters or cursor}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+  /api/v1/audit-logs/verify:
+    get:
+      tags: [Integrations & Operations]
+      summary: Verify the organization audit hash chain
+      operationId: get__api_v1_audit_logs_verify
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Hash-chain verification result
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuditVerification'}
+        '401': {description: Authentication required}
+        '403': {description: Organization read permission denied}
+        '422': {description: Organization scope is required}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+  /api/v1/quota-policies:
+    get:
+      tags: [Integrations & Operations]
+      summary: Read an organization quota policy
+      operationId: get__api_v1_quota_policies
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: Organization quota policy
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Quota'}
+        '401': {description: Authentication required}
+        '403': {description: Organization read permission denied}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+    put:
+      tags: [Integrations & Operations]
+      summary: Update an organization quota policy
+      operationId: put__api_v1_quota_policies
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/QuotaPolicyUpdate'}
+      responses:
+        '200':
+          description: Updated organization quota policy
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Quota'}
+        '401': {description: Authentication required}
+        '403': {description: Organization administrator permission denied}
+        '422': {description: Invalid quota values}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: organization
+      x-required-permissions: [organization:write]
+  /api/v1/usage:
+    get:
+      tags: [Integrations & Operations]
+      summary: Read aggregated usage for an organization
+      operationId: get__api_v1_usage
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      - name: date_from
+        in: query
+        schema: {type: string, format: date-time}
+      - name: date_to
+        in: query
+        schema: {type: string, format: date-time}
+      responses:
+        '200':
+          description: Aggregated usage metrics
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/UsagePage'}
+        '401': {description: Authentication required}
+        '403': {description: Organization read permission denied}
+        '422': {description: Invalid date range}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+  /api/v1/system-settings:
+    get:
+      tags: [Integrations & Operations]
+      summary: Read platform system-setting hashes and pending changes
+      operationId: get__api_v1_system_settings
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Safe setting summaries and pending approval metadata
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SystemSettingsPage'}
+        '401': {description: Authentication required}
+        '403': {description: Platform administrator permission denied}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [platform:admin]
+    put:
+      tags: [Integrations & Operations]
+      summary: Propose a system-setting change for a second administrator to review
+      operationId: put__api_v1_system_settings
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SystemSettingChangeRequest'}
+      responses:
+        '200':
+          description: Pending change summary without the proposed value
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SystemSettingChange'}
+        '401': {description: Authentication required}
+        '403': {description: Platform administrator permission denied}
+        '409': {description: A change for this setting is already pending}
+        '422': {description: Unsupported or unsafe setting value}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [platform:admin]
+  /api/v1/admin/system-setting-changes/{id}/decision:
+    post:
+      tags: [Integrations & Operations]
+      summary: Approve or reject a pending system-setting change
+      operationId: post__api_v1_admin_system_setting_changes__id__decision
+      security: [{BearerAuth: []}]
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SystemSettingDecision'}
+      responses:
+        '200':
+          description: Change decision and safe hash metadata
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SystemSettingChange'}
+        '401': {description: Authentication required}
+        '403': {description: Requester cannot decide their own change}
+        '404': {description: Setting change not found}
+        '409': {description: Change is stale or no longer pending}
+        '422': {description: Invalid decision}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [platform:admin]
   /api/v1/api-tokens:
     get:
       tags:
@@ -8807,6 +9290,92 @@ paths:
         description: The immutable version to compare with version_id.
         schema: *id005
       x-idempotency-policy: not-required
+  /api/v1/integrations:
+    get:
+      tags: [Integrations & Operations]
+      summary: List integrations for an organization
+      operationId: get__api_v1_integrations
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: organization_id
+        in: query
+        required: true
+        schema: {type: string, format: uuid}
+      - name: limit
+        in: query
+        required: false
+        schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      - name: cursor
+        in: query
+        required: false
+        schema: {type: string, minLength: 1}
+      responses:
+        '200':
+          description: Scoped integration page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationPage'}
+        '401': {description: Authentication required}
+        '403': {description: Scope or role denied}
+        '404': {description: Not found or scoped out}
+      x-required-roles: [org_admin, org_member]
+      x-tenant-scope: organization
+      x-required-permissions: [organization:read]
+    post:
+      tags: [Integrations & Operations]
+      summary: Create an integration using a SecretRef
+      operationId: post__api_v1_integrations
+      security:
+      - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationCreateV10'}
+      responses:
+        '201':
+          description: Integration created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationV10'}
+        '401': {description: Authentication required}
+        '403': {description: Scope or role denied}
+        '404': {description: Not found or scoped out}
+        '422': {description: Validation failed}
+      x-required-roles: [org_admin]
+      x-tenant-scope: organization
+      x-required-permissions: [organization:write]
+  /api/v1/integrations/{id}:
+    patch:
+      tags: [Integrations & Operations]
+      summary: Update an integration's non-secret configuration
+      operationId: patch__api_v1_integrations__id
+      security:
+      - BearerAuth: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IntegrationUpdateV10'}
+      responses:
+        '200':
+          description: Updated integration
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IntegrationV10'}
+        '401': {description: Authentication required}
+        '403': {description: Scope or role denied}
+        '404': {description: Not found or scoped out}
+        '422': {description: Validation failed}
+      x-required-roles: [org_admin]
+      x-tenant-scope: organization
+      x-required-permissions: [organization:write]
 components:
   securitySchemes:
     BearerAuth:
@@ -11999,8 +12568,115 @@ components:
           - IN_PROGRESS
           - RESOLVED
           - WONT_FIX
+        severity:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW]
+        classification:
+          type: string
+          enum: [LOCATOR, ASSERTION, ENVIRONMENT, INFRA, SECURITY, DATA, FLAKY]
+        root_cause_status:
+          type: string
+          enum: [INSUFFICIENT_EVIDENCE, SUGGESTED, CONFIRMED]
+        root_cause_confirmed_by:
+          type: string
+          format: uuid
+          nullable: true
+        root_cause_confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        triaged_by:
+          type: string
+          format: uuid
+          nullable: true
+        triaged_at:
+          type: string
+          format: date-time
+          nullable: true
+        analysis:
+          type: object
+          additionalProperties: true
+        occurrence_count:
+          type: integer
+          minimum: 0
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
       required:
       - id
+      - project_id
+      - fingerprint
+      - title
+      - status
+      - severity
+      - classification
+      - root_cause_status
+      - analysis
+      - created_at
+    Artifact:
+      type: object
+      additionalProperties: false
+      properties:
+        id: *id005
+        project_id: *id005
+        run_id: *id005
+        run_case_id: *id014
+        step_id: *id014
+        action_id: *id014
+        environment_id: *id014
+        case_version_id: *id014
+        browser:
+          type: string
+          nullable: true
+          enum: [chromium, firefox, webkit]
+        artifact_type:
+          type: string
+          enum: [screenshot, video, trace, har, console, report, diff]
+        content_type: *id010
+        size_bytes:
+          type: integer
+          minimum: 0
+          nullable: true
+        redacted: {type: boolean}
+        viewport: *id011
+        device_scale_factor:
+          type: number
+          minimum: 0.5
+          maximum: 4
+          nullable: true
+        color_scheme:
+          type: string
+          nullable: true
+          enum: [light, dark]
+        created_at:
+          type: string
+          format: date-time
+      required: [id, project_id, run_id, artifact_type, content_type, redacted, created_at]
+    ArtifactPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Artifact'}
+        next_cursor:
+          type: string
+          nullable: true
+      required: [items, next_cursor]
+    QualityPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        next_cursor:
+          type: string
+          nullable: true
+      required: [items, next_cursor]
     HealingRecord:
       type: object
       additionalProperties: false
@@ -12110,8 +12786,78 @@ components:
         browser: *id010
         viewport: *id011
         status: *id010
+        artifact_id: *id005
+        device_scale_factor:
+          type: number
+          minimum: 0.5
+          maximum: 4
+        color_scheme:
+          type: string
+          enum: [light, dark]
+        approved_by:
+          type: string
+          format: uuid
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_by:
+          type: string
+          format: uuid
+          nullable: true
+        decided_by:
+          type: string
+          format: uuid
+          nullable: true
+        decision_reason:
+          type: string
+          nullable: true
+        decided_at:
+          type: string
+          format: date-time
+          nullable: true
+        mask_regions:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [x, y, width, height]
+            properties:
+              x: {type: number, minimum: 0, maximum: 1}
+              y: {type: number, minimum: 0, maximum: 1}
+              width: {type: number, exclusiveMinimum: 0, maximum: 1}
+              height: {type: number, exclusiveMinimum: 0, maximum: 1}
+        max_pixel_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+        pixel_channel_tolerance:
+          type: integer
+          minimum: 0
+          maximum: 255
+        mask_hash: *id010
+        comparison_profile: *id010
+        created_at:
+          type: string
+          format: date-time
       required:
       - id
+      - project_id
+      - case_version_id
+      - browser
+      - viewport
+      - artifact_id
+      - device_scale_factor
+      - color_scheme
+      - status
+      - mask_regions
+      - max_pixel_ratio
+      - pixel_channel_tolerance
+      - mask_hash
+      - comparison_profile
+      - created_at
     VisualDiff:
       type: object
       additionalProperties: false
@@ -12124,8 +12870,60 @@ components:
           minimum: 0
           maximum: 1
         status: *id010
+        actual_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        diff_artifact_id:
+          type: string
+          format: uuid
+          nullable: true
+        changed_pixels:
+          type: integer
+          minimum: 0
+          nullable: true
+        compared_pixels:
+          type: integer
+          minimum: 0
+          nullable: true
+        max_pixel_ratio:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        pixel_channel_tolerance:
+          type: integer
+          minimum: 0
+          maximum: 255
+          nullable: true
+        mask_hash:
+          type: string
+          nullable: true
+        comparison_profile:
+          type: string
+          nullable: true
+        error_code:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
       required:
       - id
+      - baseline_id
+      - run_case_id
+      - actual_artifact_id
+      - diff_artifact_id
+      - pixel_ratio
+      - changed_pixels
+      - compared_pixels
+      - max_pixel_ratio
+      - pixel_channel_tolerance
+      - mask_hash
+      - comparison_profile
+      - status
+      - error_code
+      - created_at
     Report:
       type: object
       additionalProperties: false
@@ -12135,6 +12933,14 @@ components:
         summary: *id011
         branch: *id010
         commit_sha: *id010
+        artifact_references:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        next_cursor:
+          type: string
+          nullable: true
       required:
       - id
     ReportExport:
@@ -12151,6 +12957,10 @@ components:
           - json
           - junit
         status: *id010
+        artifact_id:
+          type: string
+          format: uuid
+          nullable: true
       required:
       - id
     Integration:
@@ -12163,16 +12973,113 @@ components:
         enabled: *id013
       required:
       - id
-    Notification:
+      - organization_id
+      - kind
+      - enabled
+    IntegrationV10:
       type: object
       additionalProperties: false
       properties:
         id: *id005
-        user_id: *id005
+        organization_id: *id005
         kind: *id010
-        read_at: *id014
-      required:
-      - id
+        config:
+          type: object
+          additionalProperties: true
+        secret_ref_id:
+          type: string
+          format: uuid
+          nullable: true
+        enabled: *id013
+        created_at:
+          type: string
+          format: date-time
+      required: [id, organization_id, kind, config, secret_ref_id, enabled, created_at]
+    IntegrationPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/IntegrationV10'}
+        next_cursor:
+          type: string
+          nullable: true
+      required: [items, next_cursor]
+    Notification:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        kind: {type: string}
+        payload:
+          type: object
+          additionalProperties: true
+        read_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+      required: [id, kind, payload, read_at, created_at]
+    NotificationPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Notification'}
+        next_cursor: {type: string, nullable: true}
+      required: [items, next_cursor]
+    NotificationReadResult:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        read: {type: boolean}
+      required: [id, read]
+    NotificationPreference:
+      type: object
+      additionalProperties: false
+      properties:
+        channel: {type: string, enum: [in_app, email, webhook]}
+        event_type: {type: string, minLength: 1, maxLength: 80}
+        enabled: {type: boolean}
+      required: [channel, event_type, enabled]
+    NotificationPreferencePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/NotificationPreference'}
+      required: [items]
+    NotificationPreferenceUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          maxItems: 500
+          items: {$ref: '#/components/schemas/NotificationPreference'}
+      required: [items]
+    DeadNotificationDelivery:
+      type: object
+      additionalProperties: false
+      properties:
+        delivery_id: {type: string, format: uuid}
+        notification_id: {type: string, format: uuid}
+        channel: {type: string, enum: [email, webhook]}
+        status: {type: string, enum: [DEAD]}
+        attempts: {type: integer, minimum: 0}
+        error_code: {type: string}
+        created_at: {type: string, format: date-time}
+      required: [delivery_id, notification_id, channel, status, attempts, error_code, created_at]
+    DeadNotificationDeliveryPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/DeadNotificationDelivery'}
+        next_cursor: {type: string, nullable: true}
+      required: [items, next_cursor]
     Usage:
       type: object
       additionalProperties: false
@@ -12183,8 +13090,15 @@ components:
           type: number
           minimum: 0
         unit: *id010
-      required:
-      - organization_id
+      required: [organization_id, metric_name, value, unit]
+    UsagePage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Usage'}
+      required: [items]
     Quota:
       type: object
       additionalProperties: false
@@ -12192,8 +13106,20 @@ components:
         organization_id: *id005
         max_concurrent_runs: *id012
         monthly_token_limit: *id012
-      required:
-      - organization_id
+        monthly_tokens_committed: *id012
+        monthly_tokens_reserved: *id012
+        monthly_tokens_remaining: *id012
+        quota_exhausted: {type: boolean}
+        period_month: {type: string, format: date}
+        updated_at: {type: string, format: date-time, nullable: true}
+      required: [organization_id, max_concurrent_runs, monthly_token_limit, monthly_tokens_committed, monthly_tokens_reserved, monthly_tokens_remaining, quota_exhausted, period_month, updated_at]
+    QuotaPolicyUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        max_concurrent_runs: {type: integer, minimum: 1, maximum: 1000}
+        monthly_token_limit: {type: integer, minimum: 0, maximum: 9223372036854775807}
+      required: [max_concurrent_runs, monthly_token_limit]
     BrowserSession:
       type: object
       additionalProperties: false
@@ -12222,13 +13148,129 @@ components:
       type: object
       additionalProperties: false
       properties:
-        id: *id012
+        id: {type: integer, minimum: 1}
+        organization_id: {type: string, format: uuid}
+        actor_user_id: {type: string, format: uuid, nullable: true}
         action: *id010
         resource_type: *id010
-        resource_id: *id005
+        resource_id: {type: string, format: uuid, nullable: true}
+        metadata:
+          type: object
+          additionalProperties: true
+        previous_hash: {type: string, nullable: true}
+        entry_hash: {type: string, minLength: 64, maxLength: 64}
         created_at: *id014
-      required:
-      - id
+      required: [id, organization_id, actor_user_id, action, resource_type, resource_id, metadata, previous_hash, entry_hash, created_at]
+    AuditPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/AuditLog'}
+        next_cursor: {type: string, nullable: true}
+      required: [items, next_cursor]
+    AuditExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        organization_id: {type: string, format: uuid}
+        filters:
+          type: object
+          additionalProperties: false
+          properties:
+            action: {type: string, maxLength: 160}
+            resource_type: {type: string, maxLength: 160}
+            actor_user_id: {type: string, format: uuid}
+            resource_id: {type: string, format: uuid}
+            created_at_from: {type: string, format: date-time}
+            created_at_to: {type: string, format: date-time}
+        limit: {type: integer, minimum: 1, maximum: 100, default: 100}
+        cursor: {type: string, maxLength: 64, nullable: true}
+      required: [organization_id, filters, limit]
+    AuditExport:
+      type: object
+      additionalProperties: false
+      properties:
+        filename: {type: string}
+        media_type: {type: string}
+        content: {type: string}
+        next_cursor: {type: string, nullable: true}
+      required: [filename, media_type, content, next_cursor]
+    AuditVerification:
+      type: object
+      additionalProperties: false
+      properties:
+        valid: {type: boolean}
+        entries_checked: {type: integer, minimum: 0}
+        first_invalid_entry_id: {type: integer, nullable: true}
+        expected_hash: {type: string, nullable: true}
+        actual_hash: {type: string, nullable: true}
+      required: [valid, entries_checked, first_invalid_entry_id, expected_hash, actual_hash]
+    SystemSetting:
+      type: object
+      additionalProperties: false
+      properties:
+        key: {type: string}
+        value_hash: {type: string, minLength: 64, maxLength: 64}
+        updated_at: {type: string, format: date-time}
+      required: [key, value_hash, updated_at]
+    SystemSettingChange:
+      type: object
+      additionalProperties: false
+      properties:
+        id: {type: string, format: uuid}
+        key: {type: string}
+        status: {type: string, enum: [PENDING, APPROVED, REJECTED, STALE]}
+        previous_value_hash: {type: string, minLength: 64, maxLength: 64}
+        proposed_value_hash: {type: string, minLength: 64, maxLength: 64}
+        requested_by: {type: string, format: uuid}
+        approved_by: {type: string, format: uuid, nullable: true}
+        reason: {type: string}
+        created_at: {type: string, format: date-time}
+        decided_at: {type: string, format: date-time, nullable: true}
+      required: [id, key, status, previous_value_hash, proposed_value_hash, requested_by, approved_by, reason, created_at, decided_at]
+    SystemSettingsPage:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/SystemSetting'}
+        pending_changes:
+          type: array
+          items: {$ref: '#/components/schemas/SystemSettingChange'}
+      required: [items, pending_changes]
+    SystemSettingPathChangeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        value:
+          oneOf:
+          - {type: boolean}
+          - {type: integer, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 500}
+      required: [value, reason]
+    SystemSettingChangeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        key:
+          type: string
+          enum: [maintenance_mode, max_concurrent_runs, monthly_token_limit, provider_timeout_seconds, notification_retry_limit]
+        value:
+          oneOf:
+          - {type: boolean}
+          - {type: integer, minimum: 0}
+        reason: {type: string, minLength: 1, maxLength: 500}
+      required: [key, value, reason]
+    SystemSettingDecision:
+      type: object
+      additionalProperties: false
+      properties:
+        decision: {type: string, enum: [approve, reject]}
+        reason: {type: string, minLength: 1, maxLength: 500}
+      required: [decision, reason]
     ProblemDetails:
       type: object
       additionalProperties: false
@@ -12558,6 +13600,28 @@ components:
           - webkit
         artifact_id: *id005
         viewport: *id011
+        mask_regions:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [x, y, width, height]
+            properties:
+              x: {type: number, minimum: 0, maximum: 1}
+              y: {type: number, minimum: 0, maximum: 1}
+              width: {type: number, exclusiveMinimum: 0, maximum: 1}
+              height: {type: number, exclusiveMinimum: 0, maximum: 1}
+        max_pixel_ratio:
+          type: number
+          default: 0.01
+          minimum: 0
+          maximum: 1
+        pixel_channel_tolerance:
+          type: integer
+          default: 0
+          minimum: 0
+          maximum: 255
       required:
       - project_id
       - case_version_id
@@ -12831,7 +13895,21 @@ components:
       additionalProperties: false
       properties:
         name: *id010
-      required: []
+        title: {type: string, minLength: 1, maxLength: 200}
+        status:
+          type: string
+          enum: [OPEN, TRIAGED, IN_PROGRESS, RESOLVED, WONT_FIX]
+        severity:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW]
+        classification:
+          type: string
+          enum: [LOCATOR, ASSERTION, ENVIRONMENT, INFRA, SECURITY, DATA, FLAKY]
+        root_cause_status:
+          type: string
+          enum: [INSUFFICIENT_EVIDENCE, SUGGESTED, CONFIRMED]
+        reason: {type: string, minLength: 1, maxLength: 2000}
+      required: [reason]
     V102PostApiV1HealingRecordsIdDecisionInput:
       type: object
       additionalProperties: false
@@ -12868,6 +13946,106 @@ components:
         kind: *id010
         config: *id011
       required: []
+    IntegrationCreateV10:
+      type: object
+      additionalProperties: false
+      properties:
+        organization_id: *id005
+        kind:
+          type: string
+          minLength: 1
+          maxLength: 80
+        config:
+          type: object
+          additionalProperties: true
+          default: {}
+        secret_ref_id:
+          type: string
+          format: uuid
+          nullable: true
+        enabled:
+          type: boolean
+          default: true
+      required: [organization_id, kind]
+    IntegrationUpdateV10:
+      type: object
+      additionalProperties: false
+      properties:
+        config:
+          type: object
+          additionalProperties: true
+        secret_ref_id:
+          type: string
+          format: uuid
+          nullable: true
+        enabled:
+          type: boolean
+      minProperties: 1
+    CITriggerRequestV10:
+      type: object
+      additionalProperties: false
+      properties:
+        project_id: *id005
+        plan_id: *id005
+        environment_id: *id005
+        repository:
+          type: string
+          minLength: 1
+          maxLength: 500
+        commit_sha:
+          type: string
+          pattern: ^[0-9a-fA-F]{7,64}$
+        branch:
+          type: string
+          nullable: true
+          maxLength: 255
+        browser_matrix:
+          type: array
+          items:
+            type: string
+            enum: [chromium, firefox, webkit]
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+        request_intent:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required: [project_id, plan_id, environment_id, repository, commit_sha, browser_matrix, request_intent]
+    RunGateCountsV10:
+      type: object
+      required:
+      - run_cases
+      - assertions_total
+      - assertions_evaluated
+      - assertions_passed
+      - assertions_failed
+      - assertions_pending
+      - blocking_failures
+      - cases_without_assertions
+      - cases_with_unknown_priority
+      properties:
+        run_cases: {type: integer, minimum: 0}
+        assertions_total: {type: integer, minimum: 0}
+        assertions_evaluated: {type: integer, minimum: 0}
+        assertions_passed: {type: integer, minimum: 0}
+        assertions_failed: {type: integer, minimum: 0}
+        assertions_pending: {type: integer, minimum: 0}
+        blocking_failures: {type: integer, minimum: 0}
+        cases_without_assertions: {type: integer, minimum: 0}
+        cases_with_unknown_priority: {type: integer, minimum: 0}
+    RunGateV10:
+      type: object
+      required: [run_id, status, blocking_severity, counts]
+      properties:
+        run_id: *id005
+        status:
+          type: string
+          enum: [PENDING, PASS, FAIL]
+        blocking_severity:
+          type: string
+          enum: [CRITICAL, HIGH, MEDIUM, LOW]
+        counts: {$ref: '#/components/schemas/RunGateCountsV10'}
     V102PostApiV1IntegrationsIdTestInput:
       type: object
       additionalProperties: false
@@ -12876,10 +14054,60 @@ components:
       required: []
     V102PostApiV1WebhooksProviderInput:
       type: object
+      additionalProperties: true
+    WebhookReceiptV10:
+      type: object
       additionalProperties: false
       properties:
-        name: *id010
-      required: []
+        receipt_id: *id005
+        status:
+          type: string
+          enum: [accepted]
+        duplicate: {type: boolean}
+      required: [receipt_id, status, duplicate]
+    DeliveryAttemptV10:
+      type: object
+      required: [attempt, status, response_status, error_code, created_at]
+      properties:
+        attempt: {type: integer, minimum: 1}
+        status:
+          type: string
+          enum: [SUCCESS, RETRY, DEAD]
+        response_status: {type: integer, nullable: true}
+        error_code: {type: string, nullable: true, maxLength: 120}
+        created_at: {type: string, format: date-time}
+    WebhookDeliveryV10:
+      type: object
+      required: [id, integration_id, event_id, status, attempts, response_code, next_attempt_at, created_at, attempt_history]
+      properties:
+        id: *id005
+        integration_id: *id005
+        event_id: {type: string}
+        status:
+          type: string
+          enum: [PENDING, SUCCEEDED, FAILED, DEAD]
+        attempts: {type: integer, minimum: 0}
+        response_code: {type: integer, nullable: true}
+        next_attempt_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+        attempt_history:
+          type: array
+          items: {$ref: '#/components/schemas/DeliveryAttemptV10'}
+    WebhookDeliveryPageV10:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/WebhookDeliveryV10'}
+        next_cursor: {type: string, format: uuid, nullable: true}
+    WebhookRetryV10:
+      allOf:
+      - {$ref: '#/components/schemas/WebhookDeliveryV10'}
+      - type: object
+        required: [queued]
+        properties:
+          queued: {type: boolean}
     V102PostApiV1NotificationsIdReadInput:
       type: object
       additionalProperties: false

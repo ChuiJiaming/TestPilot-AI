@@ -20,7 +20,8 @@ from apps.api.app.cases.persistence import (
     CasePermissionDenied, CaseRepository, CaseScopeError, CaseVersionConflict,
 )
 from apps.api.app.core.errors import ProblemDetails
-from apps.api.app.runs.persistence import RunCreationBlocked
+from apps.api.app.integrations.ci import BlockingSeverity, CITriggerService, GateEvaluator
+from apps.api.app.runs.persistence import RunCreationBlocked, ScheduledRunRepository
 from apps.api.app.runs.repository import (
     EventCursorExpired, RunApprovalConflict, RunApprovalPermissionDenied,
     RunRepository, RunScopeDenied, RunStateConflict,
@@ -44,6 +45,52 @@ class RunCreate(BaseModel):
         if len(set(self.browser_matrix)) != len(self.browser_matrix):
             raise ValueError("browser_matrix values must be unique")
         return self
+
+
+class CITriggerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: UUID
+    plan_id: UUID
+    environment_id: UUID
+    repository: str = Field(min_length=1, max_length=500)
+    commit_sha: str = Field(pattern=r"^[0-9a-fA-F]{7,64}$")
+    branch: str | None = Field(default=None, max_length=255)
+    browser_matrix: list[Literal["chromium", "firefox", "webkit"]] = Field(
+        min_length=1, max_length=3
+    )
+    request_intent: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("repository", "request_intent")
+    @classmethod
+    def required_values_must_not_be_blank(cls, value):
+        if not value.strip():
+            raise ValueError("value must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def distinct_browsers(self):
+        if len(set(self.browser_matrix)) != len(self.browser_matrix):
+            raise ValueError("browser_matrix values must be unique")
+        return self
+
+
+class RunGateCounts(BaseModel):
+    run_cases: int
+    assertions_total: int
+    assertions_evaluated: int
+    assertions_passed: int
+    assertions_failed: int
+    assertions_pending: int
+    blocking_failures: int
+    cases_without_assertions: int
+    cases_with_unknown_priority: int
+
+
+class RunGateView(BaseModel):
+    run_id: UUID
+    status: Literal["PENDING", "PASS", "FAIL"]
+    blocking_severity: BlockingSeverity
+    counts: RunGateCounts
 
 
 class RunControl(BaseModel):
@@ -116,6 +163,14 @@ class ApprovalPage(BaseModel):
     next_cursor: str | None
 
 
+class BrowserSessionView(BaseModel):
+    id: UUID
+    run_case_id: UUID
+    worker_instance: str
+    browser: Literal["chromium", "firefox", "webkit"]
+    status: str
+
+
 def create_run_router(*, repository: RunRepository | None,
                       case_repository: CaseRepository | None = None,
                       auth_sessions: AuthSessionService | None,
@@ -175,6 +230,14 @@ def create_run_router(*, repository: RunRepository | None,
         project_id = repository.project_id_for_healing(healing_id)
         if project_id is None:
             raise HTTPException(status_code=404, detail="Healing record not found")
+        return project_id
+
+    def project_for_browser_session(session_id):
+        if repository is None or auth_sessions is None:
+            raise HTTPException(status_code=503, detail="Browser session service is not configured")
+        project_id = repository.project_id_for_browser_session(session_id)
+        if project_id is None:
+            raise HTTPException(status_code=404, detail="Browser session not found")
         return project_id
 
     def run_actor(credentials, run_id, permission):
@@ -244,6 +307,98 @@ def create_run_router(*, repository: RunRepository | None,
             raise HTTPException(status_code=404, detail="Run not found") from exc
         if value is None:
             raise HTTPException(status_code=404, detail="Run not found")
+        return value
+
+    @router.post(
+        "/ci/trigger",
+        status_code=202,
+        operation_id="post__api_v1_ci_trigger",
+        responses={400: {"model": ProblemDetails}, 403: {"model": ProblemDetails},
+                   404: {"model": ProblemDetails}, 409: {"model": ProblemDetails},
+                   422: {"model": ProblemDetails}},
+    )
+    def trigger_ci(
+        payload: CITriggerRequest,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        organization_id = organization_id_for_project(payload.project_id)
+        if organization_id is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        actor_id = actor(credentials, project_id=payload.project_id, permission="run:create")
+        browser_matrix = sorted(payload.browser_matrix)
+        idempotency_key = CITriggerService.idempotency_key(
+            organization_id=organization_id,
+            repository=payload.repository,
+            commit_sha=payload.commit_sha,
+            plan_id=payload.plan_id,
+            environment_id=payload.environment_id,
+            browser_matrix=browser_matrix,
+            trigger_source="ci",
+            request_intent=payload.request_intent,
+        )
+        try:
+            scheduled = ScheduledRunRepository(repository.session_factory, repository.snapshots)
+            return scheduled.create_ci_run(
+                actor_id,
+                project_id=payload.project_id,
+                plan_id=payload.plan_id,
+                environment_id=payload.environment_id,
+                repository=payload.repository,
+                commit_sha=payload.commit_sha,
+                branch=payload.branch,
+                browser_matrix=browser_matrix,
+                request_intent=payload.request_intent,
+                idempotency_key=idempotency_key,
+                now=datetime.now(timezone.utc),
+            )
+        except (RunCreationBlocked, RunScopeDenied) as exc:
+            map_repo_error(exc)
+
+    @router.get(
+        "/test-runs/{id}/gate",
+        response_model=RunGateView,
+        operation_id="get__api_v1_test_runs__id__gate",
+        responses={400: {"model": ProblemDetails}, 403: {"model": ProblemDetails},
+                   404: {"model": ProblemDetails}},
+    )
+    def get_run_gate(
+        id: UUID,
+        blocking_severity: BlockingSeverity = Query(default="HIGH"),
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        actor_id, _ = run_actor(credentials, id, "run:read")
+        try:
+            visible_run = repository.get_run(actor_id, id)
+        except RunScopeDenied as exc:
+            raise HTTPException(status_code=404, detail="Run not found") from exc
+        if visible_run is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        gate = GateEvaluator(repository.session_factory).evaluate(
+            id, blocking_severity=blocking_severity
+        )
+        if gate is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        return gate
+
+    @router.get(
+        "/browser-sessions/{id}",
+        response_model=BrowserSessionView,
+        operation_id="get__api_v1_browser_sessions__id",
+        responses={401: {"model": ProblemDetails}, 403: {"model": ProblemDetails},
+                   404: {"model": ProblemDetails}},
+    )
+    def get_browser_session(
+        id: UUID,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        project_id = project_for_browser_session(id)
+        actor_id = actor(credentials, project_id=project_id, permission="resource:read")
+        try:
+            value = repository.get_browser_session(actor_id, id)
+        except RunScopeDenied as exc:
+            raise HTTPException(status_code=404, detail="Browser session not found") from exc
+        if value is None:
+            raise HTTPException(status_code=404, detail="Browser session not found")
         return value
 
     @router.get(

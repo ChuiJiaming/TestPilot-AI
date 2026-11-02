@@ -69,7 +69,7 @@ function forward(payload, targetUrl = workerUrl, method = "POST") {
       const chunks = []; let bytes = 0;
       response.on("data", (chunk) => {
         bytes += chunk.length;
-        if (bytes > 64 * 1024) { response.destroy(new Error("WORKER_RESPONSE_TOO_LARGE")); return; }
+        if (bytes > 12 * 1024 * 1024) { response.destroy(new Error("WORKER_RESPONSE_TOO_LARGE")); return; }
         chunks.push(chunk);
       });
       response.on("end", () => {

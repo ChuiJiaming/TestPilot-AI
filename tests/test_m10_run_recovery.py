@@ -425,6 +425,42 @@ def test_graph_routes_confirmed_failure_through_recovery_and_parks():
     assert calls == {"recovery": 1, "assertions": 0}
 
 
+def test_terminal_recovery_failure_runs_quality_analysis():
+    calls = {"analysis": 0}
+
+    class Executor:
+        current_case = {"schema_version": 2, "run_case_id": str(uuid4())}
+
+        def prepare_case(self, _case):
+            return {"action_count": 1, "assertion_count": 1}
+
+        def explorer_node(self, _state):
+            return {"exploration_status": "BOUNDED_TO_PUBLISHED_CASE"}
+
+        def execute_step_node(self, _state):
+            return {"case_status": "FAILED", "recovery_eligible": True}
+
+        def recovery_node(self, _state, _recoverer, **_kwargs):
+            return {"case_status": "FAILED", "recovery_eligible": False}
+
+        def analysis_node(self, _state, _analyzer=None):
+            calls["analysis"] += 1
+            return {"analysis_status": "RECORDED"}
+
+    executor = Executor()
+    graph = build_run_graph(InMemorySaver(), executor)
+    result = graph.invoke({
+        "schema_version": 2, "run_id": str(uuid4()),
+        "run_case_id": executor.current_case["run_case_id"],
+        "current_step": 0, "action_count": 1, "budget_left": 0,
+    }, config={"configurable": {
+        "thread_id": str(uuid4()), "checkpoint_ns": "m11-terminal-recovery-analysis",
+    }})
+
+    assert result["case_status"] == "FAILED"
+    assert calls["analysis"] == 1
+
+
 def test_approved_resume_rebinds_same_session_and_restores_failed_cursor():
     run_id, run_case_id, attempt_token = uuid4(), uuid4(), uuid4()
     case = _v2_case(run_case_id=run_case_id)
@@ -541,7 +577,8 @@ def test_admitted_run_never_creates_a_page_when_approved_healing_session_is_miss
 
         def load_execution_bundle(self, *_args, **_kwargs):
             return {
-                "run": {"requested_by": uuid4()}, "policy": {"agent_budget": 0},
+                "run": {"requested_by": uuid4(), "environment_id": uuid4()},
+                "policy": {"agent_budget": 0},
                 "snapshot": {"id": uuid4(), "base_url": "https://example.com",
                              "network_policy": {"allowed_domains": ["example.com"]}},
                 "cases": [case],

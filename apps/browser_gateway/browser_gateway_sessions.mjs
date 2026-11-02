@@ -78,7 +78,7 @@ export async function handleBrowserGatewayRequest(req, res, forward) {
   const path = req.url || "";
   const create = req.method === "POST" && path === "/internal/v1/browser-sessions/create";
   const match = req.method === "POST"
-    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|locators\/verify|rebind|close)$/i)
+    ? path.match(/^\/internal\/v1\/browser-sessions\/([0-9a-f-]{36})\/(actions|assertions|observe|screenshot|locators\/verify|rebind|close)$/i)
     : null;
   const drainMatch = req.method === "POST"
     ? path.match(/^\/internal\/workers\/([A-Za-z0-9._-]{1,128})\/drain$/)

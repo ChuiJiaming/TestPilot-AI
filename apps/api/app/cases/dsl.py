@@ -62,8 +62,15 @@ class UrlAssertion(BaseModel):
     match: Literal["exact", "contains"]
 
 
+class VisualAssertion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["visual"]
+    action_id: UUID
+    baseline_id: UUID | None = None
+
+
 Assertion = Annotated[
-    Union[TextAssertion, UrlAssertion], Field(discriminator="type")
+    Union[TextAssertion, UrlAssertion, VisualAssertion], Field(discriminator="type")
 ]
 
 

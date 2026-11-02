@@ -78,6 +78,8 @@ class TestStepRecord(AuthBase):
     action_type: Mapped[str] = mapped_column(String, nullable=False)
     locator: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
     expected: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    result_json: Mapped[dict] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String, nullable=False)
     replay_policy: Mapped[str] = mapped_column(String, nullable=False)
     recovery_healing_id: Mapped[UUID | None] = mapped_column(
@@ -265,6 +267,44 @@ class ScheduledRunRepository:
     def __init__(self, session_factory, snapshots: EnvironmentSnapshotRepository):
         self.session_factory = session_factory
         self.snapshots = snapshots
+
+    def create_ci_run(
+        self,
+        actor_id: UUID,
+        *,
+        project_id: UUID,
+        plan_id: UUID,
+        environment_id: UUID,
+        repository: str,
+        commit_sha: str,
+        branch: str | None,
+        browser_matrix: list[str],
+        request_intent: str,
+        idempotency_key: str,
+        now: datetime,
+    ) -> dict:
+        """Create a CI Run through the transactional manual-run admission path."""
+        if not repository.strip():
+            raise RunCreationBlocked("REPOSITORY_REQUIRED")
+        if not idempotency_key or len(idempotency_key) != 64:
+            raise RunCreationBlocked("INVALID_CI_IDEMPOTENCY_KEY")
+
+        # Import locally because the RunRepository uses the Run persistence models.
+        from apps.api.app.runs.repository import RunRepository
+
+        return RunRepository(self.session_factory, self.snapshots).create_run(
+            actor_id,
+            project_id=project_id,
+            environment_id=environment_id,
+            plan_id=plan_id,
+            browser_matrix=sorted(browser_matrix),
+            trigger_source="ci",
+            idempotency_key=f"ci:{idempotency_key}",
+            request_intent=request_intent,
+            branch=branch,
+            commit_sha=commit_sha.strip().casefold(),
+            now=now,
+        )
 
     def create_from_trigger(self, trigger_id: UUID, *, now: datetime):
         try:

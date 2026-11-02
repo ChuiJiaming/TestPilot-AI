@@ -79,6 +79,45 @@ SENSITIVE_EVENT_KEYS = {
     "prompt", "password", "cookie", "secret", "authorization", "access_token",
     "refresh_token", "job_token", "page_content", "html", "body",
 }
+_STEP_RESULT_STRING_FIELDS = {
+    "status", "error_code", "failure_phase", "result_kind", "visual_status",
+    "screenshot_error_code",
+}
+_STEP_RESULT_ID_FIELDS = {
+    "recovery_healing_id", "source_action_id", "screenshot_artifact_id",
+    "actual_artifact_id", "baseline_id", "diff_id",
+}
+
+
+def _safe_step_result(value):
+    """Persist only bounded deterministic codes and identifiers from a Worker result."""
+    if not isinstance(value, dict):
+        return {}
+    result = {}
+    for key in _STEP_RESULT_STRING_FIELDS:
+        item = value.get(key)
+        if isinstance(item, str) and 0 < len(item) <= 80:
+            if all(character.isalnum() or character in "_.:-" for character in item):
+                result[key] = item
+    for key in _STEP_RESULT_ID_FIELDS:
+        item = value.get(key)
+        if isinstance(item, (str, UUID)):
+            try:
+                result[key] = str(UUID(str(item)))
+            except (ValueError, TypeError, AttributeError):
+                continue
+    for key in ("action_dispatched", "matched"):
+        if type(value.get(key)) is bool:
+            result[key] = value[key]
+    for key in ("match_count", "replay_index", "changed_pixels", "compared_pixels"):
+        item = value.get(key)
+        if type(item) is int and 0 <= item <= 32_000_000:
+            result[key] = item
+    for key in ("pixel_ratio",):
+        item = value.get(key)
+        if type(item) in {int, float} and 0 <= item <= 1:
+            result[key] = float(item)
+    return result
 
 
 class StaleRunAttempt(Exception):
@@ -601,6 +640,9 @@ class RunRepository:
             snapshot = session.get(EnvironmentSnapshotRecord, run.environment_snapshot_id)
             if snapshot is None:
                 raise RunCreationBlocked("ENVIRONMENT_SNAPSHOT_NOT_FOUND")
+            project = session.get(ProjectRecord, run.project_id)
+            if project is None:
+                raise RunScopeDenied
             rows = session.execute(
                 select(RunCaseRecord, TestCaseVersionRecord)
                 .join(TestCaseVersionRecord, TestCaseVersionRecord.id == RunCaseRecord.case_version_id)
@@ -609,6 +651,7 @@ class RunRepository:
             ).all()
             return {
                 "run": {**self._run_dict(run), "requested_by": run.requested_by},
+                "organization_id": project.organization_id,
                 "policy": dict(run.policy or {}),
                 "snapshot": {
                     "id": snapshot.id, "base_url": snapshot.base_url,
@@ -780,6 +823,7 @@ class RunRepository:
                     attempt_token: UUID, worker_id: str, now: datetime):
         if status not in {"PASSED", "FAILED", "ERROR"}:
             raise ValueError("unsupported step result")
+        safe_result = _safe_step_result(result)
         with self.session_factory.begin() as session:
             step = session.scalar(select(TestStepRecord).where(
                 TestStepRecord.id == step_id).with_for_update())
@@ -793,11 +837,12 @@ class RunRepository:
                     or run.status not in {"PREPARING", "RUNNING", "PAUSING", "CANCELLING"}):
                 raise StaleRunAttempt
             step.status = status
+            step.result_json = safe_result
             step.finished_at = now
             self._append_event(session, run.id, "run.step_finished", {
                 "run_case_id": str(run_case.id), "step_id": str(step.id),
                 "action_id": str(step.action_id), "status": status,
-                "result": result,
+                "result": safe_result,
             }, now)
             return True
 
@@ -834,6 +879,36 @@ class RunRepository:
             session.add(record)
             session.flush()
             return {"id": record.id, "existing": False}
+
+    def project_id_for_browser_session(self, session_id: UUID):
+        with self.session_factory() as session:
+            return session.scalar(
+                select(TestRunRecord.project_id)
+                .select_from(BrowserSessionRecord)
+                .join(RunCaseRecord, RunCaseRecord.id == BrowserSessionRecord.run_case_id)
+                .join(TestRunRecord, TestRunRecord.id == RunCaseRecord.run_id)
+                .where(BrowserSessionRecord.id == session_id)
+            )
+
+    def get_browser_session(self, actor_id: UUID, session_id: UUID) -> dict | None:
+        with self.session_factory() as session:
+            row = session.execute(
+                select(BrowserSessionRecord, TestRunRecord.project_id)
+                .join(RunCaseRecord, RunCaseRecord.id == BrowserSessionRecord.run_case_id)
+                .join(TestRunRecord, TestRunRecord.id == RunCaseRecord.run_id)
+                .where(BrowserSessionRecord.id == session_id)
+            ).first()
+            if row is None:
+                return None
+            record, project_id = row
+            self._visible_project(session, actor_id, project_id)
+            return {
+                "id": record.id,
+                "run_case_id": record.run_case_id,
+                "worker_instance": record.worker_instance,
+                "browser": record.browser,
+                "status": record.status,
+            }
 
     def set_browser_session_status(self, session_id: UUID, status: str, *,
                                    attempt_token: UUID, worker_id: str,
@@ -2106,6 +2181,10 @@ class RunRepository:
             payload=RunRepository._sanitize_payload(payload or {}),
             created_at=now,
         ))
+        if event_type == "run.finished":
+            from apps.api.app.reports.snapshot import ensure_report_snapshot
+
+            ensure_report_snapshot(session, run_id, now=now)
 
     @staticmethod
     def _sanitize_payload(value):

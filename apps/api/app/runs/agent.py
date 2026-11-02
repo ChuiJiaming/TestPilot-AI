@@ -14,6 +14,7 @@ from apps.api.app.runs.browser import (
     BrowserGatewayUnavailable,
 )
 from apps.api.app.runs.executor import DeterministicExecutor
+from apps.api.app.operations.quotas import QuotaExceeded
 from apps.api.app.runs.planner import RunAgentProvider
 from apps.api.app.runs.repository import RunRepository, StaleRunAttempt
 
@@ -38,10 +39,13 @@ class RunGraphState(TypedDict, total=False):
     exploration_status: str
     case_status: str
     planner_status: str
+    analysis_status: str
+    defect_id: str
+    analysis: dict
 
 
 def build_run_graph(checkpointer, executor, planner=None, explorer=None,
-                    recoverer=None, requester_id=None):
+                    recoverer=None, requester_id=None, analyzer=None):
     """Compile a checkpointed graph whose only executable actions come from published DSL."""
 
     def plan_node(state: RunGraphState):
@@ -62,7 +66,11 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None,
         expected_assertions = [str(item["assert_id"]) for item in assertions]
         if not executor.consume_agent_budget():
             return {**summary, "budget_left": 0, "planner_status": "BUDGET_EXHAUSTED"}
-        proposal = planner(state, case, summary, expected_actions, expected_assertions)
+        try:
+            proposal = planner(state, case, summary, expected_actions, expected_assertions)
+        except QuotaExceeded:
+            return {**summary, "schema_version": case.get("schema_version", 1),
+                    "budget_left": 0, "planner_status": "QUOTA_EXCEEDED"}
         if (not isinstance(proposal, dict) or set(proposal) != {"action_ids", "assertion_ids"}
                 or proposal.get("action_ids") != expected_actions
                 or proposal.get("assertion_ids") != expected_assertions):
@@ -89,7 +97,10 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None,
         observation = executor.observe_page()
         if not executor.consume_agent_budget():
             return {"exploration_status": "BUDGET_EXHAUSTED", "budget_left": 0}
-        proposal = explorer(state, case, published_step, observation)
+        try:
+            proposal = explorer(state, case, published_step, observation)
+        except QuotaExceeded:
+            return {"exploration_status": "QUOTA_EXCEEDED", "budget_left": 0}
         if (not isinstance(proposal, dict) or set(proposal) != {"action_id", "locator"}
                 or proposal.get("action_id") != str(step["action_id"])
                 or proposal.get("locator") != step["locator"]):
@@ -111,11 +122,19 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None,
             return {}
         return executor.assertion_node(state)
 
+    def analysis_node(state: RunGraphState):
+        return executor.analysis_node(state, analyzer)
+
+    def route_recovery(state: RunGraphState):
+        return "analysis" if state.get("case_status") in {"FAILED", "ERROR"} else "end"
+
     def route(state: RunGraphState):
         if state.get("recovery_eligible") is True:
             return "recovery"
         status = state.get("case_status")
-        if status in {"PAUSED", "CANCELLED", "WAITING_APPROVAL", "FAILED", "ERROR"}:
+        if status in {"FAILED", "ERROR"}:
+            return "analysis"
+        if status in {"PAUSED", "CANCELLED", "WAITING_APPROVAL"}:
             return "end"
         if state.get("current_step", 0) < state.get("action_count", 0):
             return "execute"
@@ -127,16 +146,25 @@ def build_run_graph(checkpointer, executor, planner=None, explorer=None,
     graph.add_node("execute_step", execute_node)
     graph.add_node("recovery", recover_node)
     graph.add_node("assertions", assertion_node)
+    graph.add_node("analysis", analysis_node)
     graph.set_entry_point("planner")
     graph.add_edge("planner", "explorer")
     graph.add_edge("explorer", "execute_step")
     graph.add_conditional_edges(
         "execute_step", route,
         {"execute": "explorer", "recovery": "recovery",
-         "assertions": "assertions", "end": END},
+         "assertions": "assertions", "analysis": "analysis", "end": END},
     )
-    graph.add_edge("recovery", END)
-    graph.add_edge("assertions", END)
+    graph.add_conditional_edges(
+        "recovery", route_recovery,
+        {"analysis": "analysis", "end": END},
+    )
+    graph.add_conditional_edges(
+        "assertions",
+        lambda state: "analysis" if state.get("case_status") in {"FAILED", "ERROR"} else "end",
+        {"analysis": "analysis", "end": END},
+    )
+    graph.add_edge("analysis", END)
     return graph.compile(checkpointer=checkpointer)
 
 
@@ -256,7 +284,8 @@ def _resume_approved_healing(repository, gateway, executor, *, run_id: UUID,
 
 
 def execute_admitted_run(session_factory, *, run_id: UUID,
-                         attempt_token: UUID, worker_id: str):
+                         attempt_token: UUID, worker_id: str,
+                         quality_repository=None):
     repository = RunRepository(session_factory)
     bundle = repository.load_execution_bundle(run_id, attempt_token, worker_id=worker_id)
     status = repository.execution_status(run_id, attempt_token, worker_id=worker_id)
@@ -277,7 +306,17 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
     configured_budget = min(1000, max(0, configured_budget if type(configured_budget) is int else 0))
     remaining_budget = bundle["policy"].get("agent_budget_remaining", configured_budget)
     remaining_budget = min(configured_budget, max(0, remaining_budget if type(remaining_budget) is int else 0))
-    agent_provider = RunAgentProvider.from_environment() if remaining_budget else None
+    if remaining_budget:
+        from apps.api.app.operations.quotas import QuotaService
+
+        agent_provider = RunAgentProvider.from_environment(
+            quota_service=QuotaService(session_factory()),
+            organization_id=bundle["organization_id"],
+            run_id=run_id,
+            attempt_token=attempt_token,
+        )
+    else:
+        agent_provider = None
     if remaining_budget and agent_provider is None:
         raise RuntimeError("RUN_AGENT_PROVIDER_NOT_CONFIGURED")
     heartbeat = _RunHeartbeat(repository, run_id, attempt_token, worker_id)
@@ -286,6 +325,7 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
     executor = DeterministicExecutor(
         repository, gateway, run_id=run_id, attempt_token=attempt_token,
         worker_id=worker_id, snapshot=bundle["snapshot"], policy=bundle["policy"],
+        quality_repository=quality_repository,
     )
     try:
         with PostgresSaver.from_conn_string(_checkpoint_conninfo()) as checkpointer:
@@ -295,9 +335,11 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
                 planner=agent_provider.plan if agent_provider else None,
                 explorer=agent_provider.explore if agent_provider else None,
                 recoverer=agent_provider.recover if agent_provider else None,
+                analyzer=agent_provider.analyze_failure if agent_provider else None,
                 requester_id=bundle["run"].get("requested_by"),
             )
             for case in bundle["cases"]:
+                case = {**case, "environment_id": bundle["run"]["environment_id"]}
                 if case["status"] in {"PASSED", "FAILED", "ERROR", "CANCELLED"}:
                     case_results.append(case["status"])
                     continue

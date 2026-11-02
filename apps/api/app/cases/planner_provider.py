@@ -64,7 +64,7 @@ class OpenAICompatibleScenarioPlanner:
         if rates is None:
             raise ValueError("no cost rates are configured for the requested model")
         model = ChatOpenAI(model=model_name, api_key=self.api_key, base_url=self.base_url,
-                           timeout=90, max_retries=0)
+                           timeout=90, max_retries=0, max_tokens=4096)
         structured_model = model.with_structured_output(PlannerCompletion, include_raw=True)
         response = structured_model.invoke([
             ("system", "Create proposed browser test scenarios. Use only the supported DSL action and assertion schema. Never claim a test passed; test outcomes are determined by deterministic assertions, not by the model. Return only structured proposals."),
@@ -86,15 +86,20 @@ class OpenAICompatibleScenarioPlanner:
             token_usage = details.get("token_usage") or details.get("usage") or {}
             input_tokens = token_usage.get("prompt_tokens", token_usage.get("input_tokens"))
             output_tokens = token_usage.get("completion_tokens", token_usage.get("output_tokens"))
-        if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
-            raise ValueError("provider response omitted reliable token usage; cost cannot be recorded")
-
-        cost = (
-            Decimal(input_tokens) * rates["input_usd_per_million"]
-            + Decimal(output_tokens) * rates["output_usd_per_million"]
-        ) / Decimal(1_000_000)
+        usage_source = "provider_metadata"
+        if (type(input_tokens) is not int or input_tokens < 0
+                or type(output_tokens) is not int or output_tokens < 0):
+            input_tokens = 0
+            output_tokens = 0
+            cost = Decimal(0)
+            usage_source = "reserved_cap_fallback"
+        else:
+            cost = (
+                Decimal(input_tokens) * rates["input_usd_per_million"]
+                + Decimal(output_tokens) * rates["output_usd_per_million"]
+            ) / Decimal(1_000_000)
         metadata = getattr(raw, "response_metadata", None) or {}
         actual_model = metadata.get("model_name") or metadata.get("model") or model_name
         return PlannerOutput(model_version=str(actual_model), cost=cost,
             input_tokens=input_tokens, output_tokens=output_tokens,
-            proposals=parsed.proposals)
+            usage_source=usage_source, proposals=parsed.proposals)

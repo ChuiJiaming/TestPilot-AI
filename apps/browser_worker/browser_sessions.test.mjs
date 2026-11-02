@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   assertTarget,
+  captureScreenshot,
   handleBrowserWorkerRequest,
   publicAddress,
   resolvePinned,
@@ -63,6 +64,40 @@ function actionPayload(overrides = {}) {
     ...overrides,
   };
 }
+
+test("Worker screenshot capture masks form controls and returns bounded viewport metadata", async () => {
+  let screenshotOptions;
+  const mainFrameMask = { locator: "main-frame-form-controls" };
+  const childFrameMask = { locator: "child-frame-form-controls" };
+  const frames = [mainFrameMask, childFrameMask].map((mask) => ({
+    locator(selector) {
+      assert.equal(selector, "input,textarea,select,[contenteditable='true']");
+      return mask;
+    },
+  }));
+  const page = {
+    frames: () => frames,
+    viewportSize: () => ({ width: 1280, height: 720 }),
+    evaluate: async () => ({ device_scale_factor: 1, color_scheme: "light" }),
+    screenshot: async (options) => {
+      screenshotOptions = options;
+      return Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==",
+        "base64",
+      );
+    },
+  };
+
+  const result = await captureScreenshot({ page });
+
+  assert.deepEqual(screenshotOptions.mask, [mainFrameMask, childFrameMask]);
+  assert.equal(screenshotOptions.type, "png");
+  assert.equal(result.content_type, "image/png");
+  assert.deepEqual(result.viewport, { width: 1280, height: 720 });
+  assert.equal(result.device_scale_factor, 1);
+  assert.equal(result.color_scheme, "light");
+  assert.equal(Buffer.from(result.image_base64, "base64").length, 70);
+});
 
 test("Worker rejects an action scoped to another RunCase", async () => {
   const result = await invokeWorker(
