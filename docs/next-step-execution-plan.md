@@ -87,6 +87,21 @@
 
 ---
 
+## Phase 6 — 部署与加固（已完成候选配置，待真机验证）
+
+> 在 Phase B（迁移 Gate B）通过后启动。交付物为候选配置，**需在 Ubuntu 主机实测**才可进入 Phase 7。
+
+- [x] **6.1** PM2 ecosystem：`deploy/pm2/ecosystem.config.cjs`（api + agent-worker + agent-beat 单 leader）
+- [x] **6.2** Nginx：`deploy/nginx/testpilot.conf`（TLS 终止、静态、API 反代、SSE buffer-off、Gateway mTLS）
+- [x] **6.3** Worker 出口 ACL 脚本：`deploy/scripts/worker-egress-acl.sh`（DOCKER-USER，DNS 固定 + 默认 REJECT）
+- [x] **6.4** 部署文档：`deploy/README.md`（拓扑、证书矩阵、环境变量、启动顺序、验收清单）
+- [ ] **6.5** 真机验证（需 Ubuntu 主机）：`pm2 start`/`nginx -t`/SSE 重连/Worker 非 root/恢复演练/SSRF 负向
+  - 语法已静态校验（ecosystem `node --check`、ACL `bash -n`）；nginx 需目标主机 `nginx -t`
+
+**Gate 6**：`deploy/README.md` 第 7 节验收清单全部实测通过，方可进入 Phase 7。
+
+---
+
 ## Phase C — 黄金路径端到端（Day 6–9）
 
 只打通一条主干，不贪多。这条线穿过 8 个模块，通了说明架构假设成立。
