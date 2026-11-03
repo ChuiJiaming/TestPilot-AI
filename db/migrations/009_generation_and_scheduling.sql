@@ -1,36 +1,52 @@
 BEGIN;
 
-ALTER TABLE test_suites ADD COLUMN description text;
+ALTER TABLE test_suites ADD COLUMN IF NOT EXISTS description text;
 
-CREATE TABLE generation_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  created_by uuid REFERENCES users(id),
-  requirement text NOT NULL,
-  model_name text NOT NULL,
-  model_version text,
-  status text NOT NULL DEFAULT 'QUEUED'
-    CHECK (status IN ('QUEUED','RUNNING','WAITING_APPROVAL','SUCCEEDED','FAILED','CANCELLED')),
-  result jsonb CHECK (result IS NULL OR jsonb_typeof(result) IN ('object','array')),
-  error_code text,
-  cost numeric(18,6) NOT NULL DEFAULT 0 CHECK (cost >= 0),
-  input_tokens bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
-  output_tokens bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
-  attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-  automatic_retries integer NOT NULL DEFAULT 0 CHECK (automatic_retries BETWEEN 0 AND 3),
-  cancel_requested boolean NOT NULL DEFAULT false,
-  lease_expires_at timestamptz,
-  attempt_token uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  started_at timestamptz,
-  finished_at timestamptz,
-  UNIQUE (id, project_id)
-);
-CREATE INDEX ix_generation_jobs_queue ON generation_jobs(status, created_at, id);
-CREATE INDEX ix_generation_jobs_project_history
+-- Migration 002 already created generation_jobs with the V10.3 baseline shape
+-- (requester_id NOT NULL, object-only result, no cost/lease columns). This
+-- migration reconciles that frozen table with the Phase 2 record shape instead
+-- of declaring a second, incompatible definition of the same table.
+ALTER TABLE generation_jobs
+  ADD COLUMN IF NOT EXISTS created_by uuid REFERENCES users(id),
+  ADD COLUMN IF NOT EXISTS model_version text,
+  ADD COLUMN IF NOT EXISTS cost numeric(18,6) NOT NULL DEFAULT 0 CHECK (cost >= 0),
+  ADD COLUMN IF NOT EXISTS input_tokens bigint NOT NULL DEFAULT 0 CHECK (input_tokens >= 0),
+  ADD COLUMN IF NOT EXISTS output_tokens bigint NOT NULL DEFAULT 0 CHECK (output_tokens >= 0),
+  ADD COLUMN IF NOT EXISTS attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  ADD COLUMN IF NOT EXISTS automatic_retries integer NOT NULL DEFAULT 0
+    CHECK (automatic_retries BETWEEN 0 AND 3),
+  ADD COLUMN IF NOT EXISTS cancel_requested boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz,
+  ADD COLUMN IF NOT EXISTS attempt_token uuid,
+  ADD COLUMN IF NOT EXISTS started_at timestamptz;
+
+-- Legacy rows keep their original requester in created_by. New Phase 2 rows
+-- write created_by only, so the legacy NOT NULL requirement must be relaxed.
+UPDATE generation_jobs SET created_by = requester_id WHERE created_by IS NULL;
+ALTER TABLE generation_jobs ALTER COLUMN requester_id DROP NOT NULL;
+
+-- Phase 2 proposals may persist a bare JSON array; the baseline constraint
+-- allowed objects only.
+ALTER TABLE generation_jobs DROP CONSTRAINT IF EXISTS generation_jobs_result_check;
+ALTER TABLE generation_jobs ADD CONSTRAINT generation_jobs_result_check
+  CHECK (result IS NULL OR jsonb_typeof(result) IN ('object','array'));
+
+-- Status values were already widened by migration 003.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'uq_generation_jobs_id_project'
+  ) THEN
+    ALTER TABLE generation_jobs
+      ADD CONSTRAINT uq_generation_jobs_id_project UNIQUE (id, project_id);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS ix_generation_jobs_queue ON generation_jobs(status, created_at, id);
+CREATE INDEX IF NOT EXISTS ix_generation_jobs_project_history
   ON generation_jobs(project_id, created_at DESC, id DESC);
 
-CREATE TABLE generation_acceptances (
+CREATE TABLE IF NOT EXISTS generation_acceptances (
   generation_job_id uuid NOT NULL REFERENCES generation_jobs(id) ON DELETE RESTRICT,
   proposal_id uuid NOT NULL,
   case_id uuid NOT NULL REFERENCES test_cases(id) ON DELETE RESTRICT,
@@ -41,7 +57,7 @@ CREATE TABLE generation_acceptances (
   UNIQUE (case_version_id)
 );
 
-CREATE TABLE schedule_trigger_requests (
+CREATE TABLE IF NOT EXISTS schedule_trigger_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   schedule_id uuid NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
   idempotency_key text NOT NULL,
@@ -52,9 +68,9 @@ CREATE TABLE schedule_trigger_requests (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (schedule_id, idempotency_key)
 );
-CREATE INDEX ix_schedule_trigger_pending ON schedule_trigger_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS ix_schedule_trigger_pending ON schedule_trigger_requests(status, created_at);
 
-CREATE TABLE schedule_state_events (
+CREATE TABLE IF NOT EXISTS schedule_state_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   schedule_id uuid NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
   actor_user_id uuid REFERENCES users(id),
@@ -62,6 +78,6 @@ CREATE TABLE schedule_state_events (
   reason text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX ix_schedule_state_events ON schedule_state_events(schedule_id, created_at);
+CREATE INDEX IF NOT EXISTS ix_schedule_state_events ON schedule_state_events(schedule_id, created_at);
 
 COMMIT;

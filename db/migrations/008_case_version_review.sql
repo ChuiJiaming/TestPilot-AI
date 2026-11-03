@@ -3,15 +3,18 @@ BEGIN;
 -- Phase 2 candidate: preserve the V10.3 immutable case-version workflow.
 -- Existing versions retain unknown review/title state; they are never silently
 -- relabeled as drafts or published from the legacy tables.
+-- Migration 003 already added review_status (NOT NULL DEFAULT 'DRAFT') with the
+-- same value set and the ix_case_versions_review index. Those definitions stay
+-- authoritative; this migration only adds what is genuinely missing.
 ALTER TABLE test_case_versions
-  ADD COLUMN dsl_title text,
-  ADD COLUMN version_name text,
-  ADD COLUMN changelog text NOT NULL DEFAULT '',
-  ADD COLUMN review_status text
+  ADD COLUMN IF NOT EXISTS dsl_title text,
+  ADD COLUMN IF NOT EXISTS version_name text,
+  ADD COLUMN IF NOT EXISTS changelog text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS review_status text
     CHECK (review_status IN ('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED','SUPERSEDED')),
-  ADD COLUMN review_reason text,
-  ADD COLUMN approved_by uuid REFERENCES users(id),
-  ADD COLUMN approved_at timestamptz,
+  ADD COLUMN IF NOT EXISTS review_reason text,
+  ADD COLUMN IF NOT EXISTS approved_by uuid REFERENCES users(id),
+  ADD COLUMN IF NOT EXISTS approved_at timestamptz,
   ADD CONSTRAINT uq_case_version_id_case UNIQUE (id, case_id);
 
 ALTER TABLE test_cases
@@ -26,7 +29,11 @@ ALTER TABLE test_cases
 ALTER TABLE approvals
   ALTER COLUMN run_id DROP NOT NULL,
   ALTER COLUMN expires_at DROP NOT NULL,
-  ADD COLUMN case_version_id uuid REFERENCES test_case_versions(id) ON DELETE RESTRICT;
+  ADD COLUMN case_version_id uuid REFERENCES test_case_versions(id) ON DELETE RESTRICT,
+  -- ApprovalRecord maps a NOT NULL `payload` jsonb column that migrations 001-007
+  -- never created. Without it every ORM approval write raises UndefinedColumn on
+  -- PostgreSQL while SQLite tests stay green (schema comes from the ORM there).
+  ADD COLUMN IF NOT EXISTS payload jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 UPDATE approvals a
 SET project_id = r.project_id,
@@ -49,8 +56,8 @@ ALTER TABLE approvals
     )
   );
 
-CREATE INDEX ix_case_versions_review ON test_case_versions(case_id, review_status, version);
-CREATE INDEX ix_approvals_case_version ON approvals(case_version_id) WHERE case_version_id IS NOT NULL;
-CREATE UNIQUE INDEX uq_approval_case_version ON approvals(case_version_id) WHERE case_version_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS ix_case_versions_review ON test_case_versions(case_id, review_status, version);
+CREATE INDEX IF NOT EXISTS ix_approvals_case_version ON approvals(case_version_id) WHERE case_version_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_approval_case_version ON approvals(case_version_id) WHERE case_version_id IS NOT NULL;
 
 COMMIT;

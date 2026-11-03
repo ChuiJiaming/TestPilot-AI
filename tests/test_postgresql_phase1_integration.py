@@ -76,13 +76,13 @@ class PhaseOnePostgreSQLIntegrationTests(unittest.TestCase):
         try:
             owner_id = auth.issue(
                 owner_email, "integration-hash", "Phase 1 Owner", owner_token,
-                now + timedelta(minutes=10), now
+                f"cipher-owner-{run_id.hex}", now + timedelta(minutes=10), now
             )
             self.assertIsNotNone(owner_id)
             self.assertTrue(auth.consume(owner_token, now))
             member_id = auth.issue(
                 member_email, "integration-hash", "Phase 1 Member", member_token,
-                now + timedelta(minutes=10), now
+                f"cipher-member-{run_id.hex}", now + timedelta(minutes=10), now
             )
             self.assertIsNotNone(member_id)
             self.assertTrue(auth.consume(member_token, now))
