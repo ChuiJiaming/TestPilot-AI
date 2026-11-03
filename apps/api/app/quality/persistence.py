@@ -74,7 +74,11 @@ class TestArtifactRecord(AuthBase):
     sha256: Mapped[str | None] = mapped_column(String)
     size_bytes: Mapped[int | None] = mapped_column(BigInteger)
     redacted: Mapped[bool] = mapped_column(nullable=False, default=False)
-    viewport: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    # none_as_null: without it SQLAlchemy serialises Python None to the JSON value
+    # `null` instead of SQL NULL, which violates migration 016's
+    # CHECK (viewport IS NULL OR jsonb_typeof(viewport) = 'object').
+    viewport: Mapped[dict | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"))
     device_scale_factor: Mapped[float | None] = mapped_column(Numeric(5, 2))
     color_scheme: Mapped[str | None] = mapped_column(String)
     metadata_json: Mapped[dict] = mapped_column(

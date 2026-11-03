@@ -11,3 +11,9 @@ apps/web/playwright-report/
 .env
 .env.*
 !.env.example
+.e2e-logs/
+.tmp_schema/
+# Celery beat writes its schedule state next to whatever cwd it was started in.
+celerybeat-schedule*
+# Local assistant project state (never source).
+.workbuddy/

@@ -44,6 +44,10 @@ class SuiteCaseRecord(AuthBase):
     suite_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_suites.id", ondelete="CASCADE"), primary_key=True)
     case_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_cases.id"), primary_key=True)
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Migration 004 adds project_id plus composite scope FKs and a NOT NULL check
+    # (ck_suite_cases_project_required_v102). The column is nullable in the DDL but
+    # the check rejects NULL on insert, so every new row must populate it.
+    project_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("projects.id"))
 
 
 class TestPlanRecord(AuthBase):
@@ -61,6 +65,9 @@ class ScheduleRecord(AuthBase):
     id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     plan_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_plans.id"), nullable=False)
     environment_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("environments.id"), nullable=False)
+    # Required by ck_schedules_project_required_v102 (migration 004) and the
+    # (environment_id, project_id) scope FK.
+    project_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("projects.id"))
     cron_expression: Mapped[str] = mapped_column(String, nullable=False)
     timezone: Mapped[str] = mapped_column(String, nullable=False)
     enabled: Mapped[bool] = mapped_column(nullable=False)
@@ -119,7 +126,10 @@ class GenerationJobRecord(AuthBase):
     model_name: Mapped[str] = mapped_column(String, nullable=False)
     model_version: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, nullable=False)
-    result: Mapped[dict | list | None] = mapped_column(JSON().with_variant(JSONB, "postgresql"))
+    # none_as_null: migration 009 constrains result to SQL NULL or a JSON object/array;
+    # a Python None would otherwise be stored as the JSON value `null` and rejected.
+    result: Mapped[dict | list | None] = mapped_column(
+        JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql"))
     error_code: Mapped[str | None] = mapped_column(String)
     cost: Mapped[float] = mapped_column(Numeric(18, 6), nullable=False)
     input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -216,10 +226,14 @@ class PlanningRepository:
             CaseRepository._visible_project(session, actor_id, suite.project_id, for_write=True)
             link = session.get(SuiteCaseRecord, (suite_id, case_id), with_for_update=True)
             if link is None:
-                link = SuiteCaseRecord(suite_id=suite_id, case_id=case_id, sequence=sequence)
+                # project_id is required by ck_suite_cases_project_required_v102 and by the
+                # composite (suite_id|case_id, project_id) scope FKs added in migration 004.
+                link = SuiteCaseRecord(suite_id=suite_id, case_id=case_id, sequence=sequence,
+                                       project_id=suite.project_id)
                 session.add(link)
             else:
                 link.sequence = sequence
+                link.project_id = suite.project_id
             session.flush()
             links = session.execute(select(SuiteCaseRecord, TestCaseRecord)
                                     .join(TestCaseRecord, TestCaseRecord.id == SuiteCaseRecord.case_id)
@@ -276,6 +290,7 @@ class PlanningRepository:
                 raise CaseScopeError
             CaseRepository._visible_project(session, actor_id, plan.project_id, for_write=True)
             row = ScheduleRecord(id=uuid4(), plan_id=plan_id, environment_id=environment_id,
+                                 project_id=plan.project_id,
                                  cron_expression=cron_expression, timezone=timezone, enabled=True,
                                  next_fire_at=next_fire_at(cron_expression, timezone, now),
                                  last_fire_at=None, created_at=now)

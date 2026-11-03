@@ -207,6 +207,9 @@ class RunRepository:
                         session.add(RunCaseRecord(
                             id=uuid4(), run_id=run_id, case_version_id=version_id,
                             browser_name=browser, status="QUEUED",
+                            # required by ck_run_cases_project_not_null_v103 and the
+                            # composite (run_id|case_version_id, project_id) scope FKs
+                            project_id=project.id,
                         ))
                 self._append_event(session, run_id, "run.queued", {
                     "trigger_source": trigger_source,

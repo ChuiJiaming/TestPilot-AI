@@ -60,6 +60,10 @@ class RunCaseRecord(AuthBase):
     run_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_runs.id", ondelete="CASCADE"), nullable=False)
     case_version_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("test_case_versions.id"), nullable=False)
     browser_name: Mapped[str | None] = mapped_column(String)
+    # Migration 005 adds project_id plus composite scope FKs (run, case_version),
+    # a UNIQUE(id, project_id) and ck_run_cases_project_not_null_v103. The column is
+    # nullable in DDL but the check rejects NULL on insert.
+    project_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("projects.id"))
     status: Mapped[str] = mapped_column(String, nullable=False)
     lease_owner: Mapped[str | None] = mapped_column(String)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

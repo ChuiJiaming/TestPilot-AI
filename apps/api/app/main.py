@@ -4,6 +4,12 @@ import os
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+# Register every ORM table before any mapper is configured, so string foreign keys
+# resolve regardless of which modules this process happens to import.
+from apps.api.app import orm_models
+
+orm_models.load_all_models()
+
 from apps.api.app.core.errors import install_error_handlers
 from apps.api.app.auth.routes import (
     PasswordHash,

@@ -14,6 +14,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
 
+# The worker process imports a much smaller module graph than the API. Without this,
+# SQLAlchemy cannot resolve cross-module foreign keys (e.g. report_exports.artifact_id
+# -> test_artifacts.id) and mapper configuration fails at runtime.
+from apps.api.app import orm_models
+
+orm_models.load_all_models()
+
 from apps.api.app.cases.planning import (
     GenerationRepository,
     OutboxRecord,
