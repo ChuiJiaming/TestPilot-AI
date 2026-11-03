@@ -1,5 +1,9 @@
 # Phase 1–4 Unified Validation Record
 
+> **历史快照（2026-10-30），数字已过时，勿再引用。** 当前权威数字见
+> [`current-validation-status.md`](current-validation-status.md)
+> （后端 298 passed / 前端 31 tests / 迁移 18/18）。
+
 Date: 2026-10-30  
 Scope: locally runnable acceptance for the execution, recovery, browser-isolation, and quality paths needed before Phase 5. This record does not claim full Phase 1–4 acceptance.
 

@@ -4,6 +4,10 @@ Status: implementation is in progress. Per owner direction, implementation proce
 
 ## Unified validation remains deferred while implementation candidates and Phase 3 gaps are completed
 
+> **注意**：本文提到的「151 passed / 4 skipped」为 2026-10-30 历史快照。
+> 迁移链已在本文件撰写后修复并全量验证，当前权威数字见
+> [`current-validation-status.md`](current-validation-status.md)。
+
 Do not mark Phase 2 accepted until every applicable command below has actually run and its output/evidence is attached. A missing external service must be recorded as blocked, never as passed.
 
 Phase 3 now has candidate code for `RUN_REQUESTED` consumption/admission, Run approval request/decision/expiry, budget-gated M07 Planner/Explorer calls with bounded page observations, and M08 mTLS Worker registration/discovery, session affinity, explicit IPv4 target resolution, and resource-limited Compose settings. Local repository tests cover admission and recovery paths, but end-to-end evidence is still missing. Remaining external/source configuration includes M04 provider key/pricing, M07 run-agent model selection, and M08 certificate provisioning plus applying the candidate host egress ACL. M05 DSL v2 remains an explicit divergence from V10.3 §44.2 DSL v3; HTTP contract checks for M05 and M06 remain deferred. The full unified validation stays open until external services and source configuration are available; the project verification log `docs/TestPilot_AI_V10.3_验证记录.txt` tracks this backlog alongside Phase 1 evidence.

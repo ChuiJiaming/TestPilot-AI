@@ -1,6 +1,8 @@
 # TestPilot AI V10.3 Implementation Plan
 
 > **For implementation:** Execute one phase at a time. Each module keeps its interface, database, frontend, tests, and acceptance evidence. Do not mark a module complete based on static checks alone.
+>
+> **当前验证状态（2026-11-03）**：各 Phase 下文 Status 段中的测试数字与「迁移未应用」结论是撰写时快照，已部分过时。权威数字见 [`current-validation-status.md`](current-validation-status.md) —— 迁移 001–018 已全量验证通过（008/009/010 已修复）、后端 298 passed、前端 31 tests。下文「candidate migrations … remain unapplied」的表述应以该文档为准。
 
 **Goal:** Implement the complete M01–M15 enterprise AI Web automation testing platform defined by V10.3, preserving every one of the 101 baseline HTTP operations. Additive M01–M06 operations, including verification/session and operational dead-letter reads, are inventoried separately and must not replace baseline IDs.
 

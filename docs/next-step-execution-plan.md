@@ -130,10 +130,10 @@
 
 ## Phase D — 证据回填（Day 10）
 
-- [ ] **D1** 新建 `docs/2026-11-XX-unified-validation.md`（**不改历史文件**）
-- [ ] **D2** 更新 `README.md` 状态表：补上阶段 4/5，修正测试数字，指向新记录
-- [ ] **D3** 更新 `docs/PLAN.md` 各 Phase 的 Status 行
-- [ ] **D4** 复核 `db/migrations/README.md`：把 008–018 从「未应用候选」改为实际结论
+- [x] **D1** 新建 `docs/current-validation-status.md`（**不改历史文件**，作为唯一权威快照）
+- [x] **D2** 更新 `README.md` 状态表：补上阶段 4/5，修正测试数字（298/31），指向新记录
+- [x] **D3** 更新 `docs/PLAN.md`：顶部加权威指针，标注 Status 段数字已过时
+- [x] **D4** 复核 `db/migrations/README.md`：008–018 由「未应用候选」改为「已验证通过」结论
 
 **Gate D**：文档数字 = 实测数字，无一处推断。
 

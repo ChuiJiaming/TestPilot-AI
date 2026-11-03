@@ -1,3 +1,5 @@
+# 注意：本文件为历史验证记录（V10.3 阶段），其中测试数字（如 60 passed / 15 frontend）为当时快照。
+# 当前权威数字见 docs/current-validation-status.md（后端 298 passed / 前端 31 tests / 迁移 18/18）。
 PASS: all original paragraph texts preserved in original order
 PASS: all original table cell texts preserved
 PASS: original three inline diagrams present
