@@ -225,8 +225,9 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
       <main className="main-area">
         <header className="topbar"><div className="breadcrumbs">工作区 <span>/</span> <strong>{pageTitle}</strong></div><div className="top-actions"><Button variant="ghost" className="icon-button" aria-label="刷新数据" onClick={() => void loadWorkspace()}><RefreshCw size={16} /></Button><div className="user-chip"><div className="user-avatar">{(auth.user.display_name || auth.user.email).slice(0, 1).toUpperCase()}</div><div><strong>{auth.user.display_name}</strong><small>{auth.user.email}</small></div><Button variant="ghost" className="icon-button" aria-label="退出登录" onClick={() => void signOut()}><LogOut size={16} /></Button></div></div></header>
         <section className="page-content">
-          <div className="page-heading"><div><div className="eyebrow muted">SURESHOT · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "管理测试目标和不可变运行快照。" : page === "cases" ? "维护测试用例和版本审核；DSL 细节及历史兼容按契约清单处理。" : page === "planning" ? "管理 AI 生成任务、测试套件、执行计划与调度。" : page === "runs" ? "创建和观察 Run；数据库快照是状态依据，事件流用于进度更新。" : page === "quality" ? "复核 Analyzer 假设和发生证据，审批视觉基线并检查确定性差异。" : page === "reports" ? "查看不可变运行报告，异步生成并通过当前项目授权下载导出。" : page === "integrations" ? "管理组织集成、提交幂等 CI Run，并检查确定性门禁和 Webhook 投递。" : page === "operations" ? "查看模型调用额度、账户通知、组织审计记录和平台设置审批。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
+          <div className="page-heading"><div><div className="eyebrow muted">SURESHOT · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "登记测试目标站点；每次运行会固化环境快照，保证结果可追溯。" : page === "cases" ? "维护测试用例和版本审核，审核通过的用例才能被套件引用。" : page === "planning" ? "用 AI 生成测试建议，组织套件与执行计划，并设置定时调度。" : page === "runs" ? "创建和观察测试运行，实时跟踪执行进度与结果。" : page === "quality" ? "复核 AI 分析建议，审批视觉基线并检查差异。" : page === "reports" ? "查看不可变运行报告，按需导出为网页、PDF 等格式。" : page === "integrations" ? "管理组织集成，接入 CI 流水线并检查结果门禁和 Webhook 投递。" : page === "operations" ? "查看模型调用额度、账户通知、审计记录和平台设置审批。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
           {error && <div className="alert alert-error page-alert" role="alert">{error}</div>}
+          <div className="page-enter" key={page}>
           {loading ? <Loading /> : page === "overview" ? <Overview organizations={organizations} projects={projects} sessions={sessions} onNavigate={setPage} />
             : page === "projects" ? <ProjectsPage organizations={organizations} projects={projects} showOrgForm={showOrgForm} showProjectForm={showProjectForm} setShowOrgForm={setShowOrgForm} setShowProjectForm={setShowProjectForm} onCreateOrg={createOrganization} onCreateProject={createProject} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setPage("members"); }} />
               : page === "members" ? <MembersPage project={selectedProject} accessToken={auth.access_token} />
@@ -240,6 +241,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
                 : page === "sessions" ? <SessionsPage sessions={sessions} onRevoke={revokeSession} />
                 : page === "access" ? <AccessPage organizations={organizations} projects={projects} accessToken={auth.access_token} />
                   : <EnvironmentPage project={selectedProject} accessToken={auth.access_token} />}
+          </div>
         </section>
       </main>
     </div>
@@ -278,8 +280,8 @@ function ProjectsPage({ organizations, projects, showOrgForm, showProjectForm, s
 }) {
   return <>
     <div className="action-row"><div className="scope-summary"><span className="mini-icon"><Building2 size={16} /></span><span>可访问 <b>{organizations.length}</b> 个组织、<b>{projects.length}</b> 个项目</span></div><div className="button-row"><Button variant="secondary" onClick={() => setShowOrgForm(!showOrgForm)}><Plus size={16} /> 新建组织</Button><Button onClick={() => setShowProjectForm(!showProjectForm)} disabled={organizations.length === 0}><Plus size={16} /> 新建项目</Button></div></div>
-    {showOrgForm && <Card className="form-card"><div className="form-card-title"><div><CardTitle>创建组织</CardTitle><p>组织名称和 slug 均需显式填写。</p></div><Button variant="ghost" onClick={() => setShowOrgForm(false)}>取消</Button></div><form className="inline-form" onSubmit={onCreateOrg}><div><Label htmlFor="org-name">组织名称</Label><Input id="org-name" name="name" required minLength={1} /></div><div><Label htmlFor="org-slug">组织 slug</Label><Input id="org-slug" name="slug" required minLength={1} /></div><Button type="submit">创建组织</Button></form></Card>}
-    {showProjectForm && <Card className="form-card"><div className="form-card-title"><div><CardTitle>创建项目</CardTitle><p>项目创建者自动获得 project_admin。</p></div><Button variant="ghost" onClick={() => setShowProjectForm(false)}>取消</Button></div><form className="inline-form" onSubmit={onCreateProject}><div><Label htmlFor="project-org">所属组织</Label><select id="project-org" className="input" name="organization_id" required>{organizations.map((org) => <option key={org.id} value={org.id}>{org.name} · {org.role}</option>)}</select></div><div><Label htmlFor="project-name">项目名称</Label><Input id="project-name" name="name" required maxLength={120} /></div><div><Label htmlFor="project-slug">项目 slug</Label><Input id="project-slug" name="slug" required pattern="[a-z0-9-]{2,64}" maxLength={64} /></div><Button type="submit">创建项目</Button></form></Card>}
+    {showOrgForm && <Card className="form-card reveal"><div className="form-card-title"><div><CardTitle>创建组织</CardTitle><p>组织名称和 slug 均需显式填写。</p></div><Button variant="ghost" onClick={() => setShowOrgForm(false)}>取消</Button></div><form className="inline-form" onSubmit={onCreateOrg}><div><Label htmlFor="org-name">组织名称</Label><Input id="org-name" name="name" required minLength={1} /></div><div><Label htmlFor="org-slug">组织 slug</Label><Input id="org-slug" name="slug" required minLength={1} /></div><Button type="submit">创建组织</Button></form></Card>}
+    {showProjectForm && <Card className="form-card reveal"><div className="form-card-title"><div><CardTitle>创建项目</CardTitle><p>项目创建者自动获得 project_admin。</p></div><Button variant="ghost" onClick={() => setShowProjectForm(false)}>取消</Button></div><form className="inline-form" onSubmit={onCreateProject}><div><Label htmlFor="project-org">所属组织</Label><select id="project-org" className="input" name="organization_id" required>{organizations.map((org) => <option key={org.id} value={org.id}>{org.name} · {org.role}</option>)}</select></div><div><Label htmlFor="project-name">项目名称</Label><Input id="project-name" name="name" required maxLength={120} /></div><div><Label htmlFor="project-slug">项目 slug</Label><Input id="project-slug" name="slug" required pattern="[a-z0-9-]{2,64}" maxLength={64} /></div><Button type="submit">创建项目</Button></form></Card>}
     <div className="section-heading section-heading-spaced"><div><h2>项目列表</h2><p>项目权限由项目成员角色与组织管理员权限共同决定。</p></div></div>
     {projects.length === 0 ? <EmptyState icon={<Boxes />} title="还没有项目" text={organizations.length ? "为组织创建第一个项目，开始配置测试空间。" : "先创建组织，再添加项目。"} /> : <div className="project-grid">{projects.map((project) => <Card className="project-card" key={project.id}><div className="project-top"><span className="project-logo">{project.name.slice(0, 1).toUpperCase()}</span><span className={`role-pill ${project.role === "project_admin" ? "role-admin" : ""}`}>{project.role ?? "组织管理员"}</span></div><h3>{project.name}</h3><p>{organizations.find((org) => org.id === project.organization_id)?.name ?? "组织"} <span>·</span> {project.slug}</p><div className="project-footer"><span><span className="system-dot" /> 项目空间</span><Button variant="ghost" className="small-action" onClick={() => onSelectProject(project.id)}>查看项目 <span>→</span></Button></div></Card>)}</div>}
   </>;
@@ -531,6 +533,9 @@ export function EnvironmentPage({ project, accessToken }: { project: Project | u
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [networkPolicy, setNetworkPolicy] = useState("{}");
+  const [allowedDomains, setAllowedDomains] = useState("");
+  const [policyAdvanced, setPolicyAdvanced] = useState(false);
+  const [showEnvForm, setShowEnvForm] = useState(false);
   const [secretRefId, setSecretRefId] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -550,6 +555,7 @@ export function EnvironmentPage({ project, accessToken }: { project: Project | u
       setEnvironments((current) => append ? [...current, ...page.items] : page.items);
       setNextCursor(page.next_cursor);
       setSelectedId((current) => current && (append || page.items.some((item) => item.id === current)) ? current : (page.items[0]?.id ?? ""));
+      if (!append) setShowEnvForm(page.items.length === 0);
     } catch (caught) { setError(messageOf(caught)); }
     finally { setLoading(false); }
   }, [accessToken, project]);
@@ -560,18 +566,38 @@ export function EnvironmentPage({ project, accessToken }: { project: Project | u
   useEffect(() => {
     setName(selectedEnvironment?.name ?? "");
     setBaseUrl(selectedEnvironment?.base_url ?? "");
-    setNetworkPolicy(JSON.stringify(selectedEnvironment?.network_policy ?? {}, null, 2));
+    const storedPolicy = selectedEnvironment?.network_policy ?? {};
+    const domains = storedPolicy.allowed_domains;
+    setAllowedDomains(Array.isArray(domains) ? (domains as string[]).join("\n") : "");
+    setNetworkPolicy(JSON.stringify(storedPolicy, null, 2));
     setSecretRefId(selectedEnvironment?.secret_ref_id ?? "");
     setSnapshots(null);
   }, [selectedEnvironment?.id, selectedEnvironment?.name, selectedEnvironment?.base_url, selectedEnvironment?.network_policy, selectedEnvironment?.secret_ref_id]);
+
+  function togglePolicyAdvanced() {
+    if (!policyAdvanced) {
+      setNetworkPolicy(JSON.stringify({ allowed_domains: allowedDomains.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) }, null, 2));
+    } else {
+      try {
+        const parsed = JSON.parse(networkPolicy) as { allowed_domains?: unknown };
+        setAllowedDomains(Array.isArray(parsed.allowed_domains) ? (parsed.allowed_domains as string[]).join("\n") : "");
+      } catch { /* JSON 无效时保留原输入，交由保存时报错 */ }
+    }
+    setPolicyAdvanced((value) => !value);
+  }
 
   async function saveEnvironment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (!project) return;
     setBusy(true); setError("");
     try {
-      const parsedNetworkPolicy = JSON.parse(networkPolicy) as Record<string, unknown>;
-      if (!parsedNetworkPolicy || Array.isArray(parsedNetworkPolicy) || typeof parsedNetworkPolicy !== "object") {
-        throw new Error("网络策略必须是 JSON 对象。");
+      let parsedNetworkPolicy: Record<string, unknown>;
+      if (policyAdvanced) {
+        parsedNetworkPolicy = JSON.parse(networkPolicy) as Record<string, unknown>;
+        if (!parsedNetworkPolicy || Array.isArray(parsedNetworkPolicy) || typeof parsedNetworkPolicy !== "object") {
+          throw new Error("网络策略必须是 JSON 对象。");
+        }
+      } else {
+        parsedNetworkPolicy = { allowed_domains: allowedDomains.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) };
       }
       if (selectedEnvironment) {
         const updated = await api<Environment>(`/api/v1/environments/${selectedEnvironment.id}`, {
@@ -606,11 +632,13 @@ export function EnvironmentPage({ project, accessToken }: { project: Project | u
   return <>
     <Card className="environment-callout"><span className="environment-icon"><Layers3 /></span><div><h2>{project ? `当前项目：${project.name}` : "先创建或选择一个项目"}</h2><p>环境配置属于项目范围；已创建的运行快照保持不可变，并固定当时的环境配置版本。</p></div></Card>
     {!project ? <EmptyState icon={<Layers3 />} title="还没有可用项目" text="先创建组织和项目，再管理测试环境。" /> : <>
-      <Card className="form-card snapshot-lookup"><div className="form-card-title"><div><CardTitle>{selectedEnvironment ? "编辑测试环境" : "创建测试环境"}</CardTitle><p>仅保存目标 URL 和网络策略元数据，不会在保存时访问目标站点。</p></div><Button variant="secondary" type="button" disabled={loading} onClick={() => void loadEnvironments()}>刷新</Button></div>
-        {environments.length > 0 && <div className="environment-picker"><Label htmlFor="environment-select">项目环境</Label><select id="environment-select" className="input" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}><option value="">新建环境</option>{environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name} · {environment.base_url}</option>)}</select></div>}
+      <Card className="form-card snapshot-lookup"><div className="form-card-title"><div><CardTitle>{selectedEnvironment ? "编辑测试环境" : "创建测试环境"}</CardTitle><p>登记测试目标站点和允许访问的域名；保存时不会访问目标站点。</p></div><div className="button-row"><Button variant="secondary" type="button" disabled={loading} onClick={() => void loadEnvironments()}>刷新</Button><Button type="button" onClick={() => setShowEnvForm((value) => !value)}>{showEnvForm ? "收起表单" : <><Plus size={15} /> {selectedEnvironment ? "编辑此环境" : "新建环境"}</>}</Button></div></div>
+        {environments.length > 0 && <div className="environment-picker"><Label htmlFor="environment-select">项目环境</Label><select id="environment-select" className="input" value={selectedId} onChange={(event) => { setSelectedId(event.target.value); setShowEnvForm(true); }}><option value="">新建环境</option>{environments.map((environment) => <option key={environment.id} value={environment.id}>{environment.name} · {environment.base_url}</option>)}</select></div>}
+        {showEnvForm && <div className="reveal">
         <form className="inline-form environment-form" onSubmit={saveEnvironment}><div><Label htmlFor="environment-name">环境名称</Label><Input id="environment-name" value={name} onChange={(event) => setName(event.target.value)} required maxLength={120} /></div><div><Label htmlFor="environment-base-url">目标 URL</Label><Input id="environment-base-url" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} required placeholder="https://staging.example.com" /></div><Button type="submit" disabled={busy || loading}>{busy ? "保存中…" : selectedEnvironment ? "保存修改" : <><Plus size={15} /> 创建环境</>}</Button></form>
-        <div className="environment-picker"><Label htmlFor="environment-secret-ref">SecretRef（可选）</Label><select id="environment-secret-ref" className="input" value={secretRefId} onChange={(event) => setSecretRefId(event.target.value)}><option value="">不关联</option>{secretRefs.map((ref) => <option key={ref.id} value={ref.id}>{ref.provider} · {ref.external_key} · v{ref.active_version ?? "?"}</option>)}</select></div>
-        <div className="environment-policy"><Label htmlFor="environment-network-policy">网络策略 JSON</Label><textarea id="environment-network-policy" className="input policy-editor" value={networkPolicy} onChange={(event) => setNetworkPolicy(event.target.value)} spellCheck={false} aria-describedby="environment-policy-help" /><small id="environment-policy-help">健康检查要求 `allowed_domains` 精确列出目标主机（不支持通配符）；实际出站访问由独立 Worker 和出口策略执行。</small></div>
+        <div className="environment-picker"><Label htmlFor="environment-secret-ref">登录凭据引用 SecretRef（可选）</Label><select id="environment-secret-ref" className="input" value={secretRefId} onChange={(event) => setSecretRefId(event.target.value)}><option value="">不关联</option>{secretRefs.map((ref) => <option key={ref.id} value={ref.id}>{ref.provider} · {ref.external_key} · v{ref.active_version ?? "?"}</option>)}</select><small className="policy-hint">运行时由密钥提供方按此引用取值，平台不保存密钥明文。</small></div>
+        <div className="environment-policy"><div className="policy-head"><Label htmlFor="environment-domains">出口域名白名单（每行一个）</Label><button type="button" className="text-button" onClick={togglePolicyAdvanced}>{policyAdvanced ? "返回表单模式" : "高级：直接编辑 JSON"}</button></div>{policyAdvanced ? <textarea id="environment-network-policy" className="input policy-editor" value={networkPolicy} onChange={(event) => setNetworkPolicy(event.target.value)} spellCheck={false} aria-describedby="environment-policy-help" /> : <textarea id="environment-domains" className="input policy-editor domains-editor" value={allowedDomains} onChange={(event) => setAllowedDomains(event.target.value)} placeholder={"staging.example.com\napi.example.com"} spellCheck={false} aria-describedby="environment-policy-help" />}<small id="environment-policy-help">{policyAdvanced ? "完整网络策略 JSON；健康检查要求 allowed_domains 精确列出目标主机（不支持通配符）；实际出站访问由独立 Worker 和出口策略执行。" : "健康检查只会访问白名单中的主机（需精确域名，不支持通配符）；实际出站访问由独立 Worker 和出口策略执行。"}</small></div>
+        </div>}
         {loading && <div className="empty-inline" role="status">正在加载环境…</div>}
         {!loading && environments.length === 0 && <div className="empty-inline">当前项目还没有环境。创建后即可查看对应快照。</div>}
         {nextCursor && <div className="table-more"><Button variant="secondary" type="button" disabled={loading} onClick={() => void loadEnvironments(nextCursor, true)}>加载更多环境</Button></div>}

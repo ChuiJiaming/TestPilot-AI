@@ -61,13 +61,13 @@ describe("EnvironmentPage", () => {
 
     fireEvent.change(await screen.findByLabelText("环境名称"), { target: { value: "staging" } });
     fireEvent.change(screen.getByLabelText("目标 URL"), { target: { value: environment.base_url } });
-    fireEvent.change(screen.getByLabelText("网络策略 JSON"), { target: { value: JSON.stringify(environment.network_policy) } });
+    fireEvent.change(screen.getByLabelText("出口域名白名单（每行一个）"), { target: { value: "staging.example.test" } });
     fireEvent.click(screen.getByRole("button", { name: /创建环境/ }));
 
     expect(await screen.findByText("staging", { selector: "b" })).toBeInTheDocument();
     const [createUrl, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(createUrl).toContain("/api/v1/projects/project-1/environments");
-    expect(JSON.parse(String(createInit.body))).toEqual({ name: "staging", base_url: environment.base_url, network_policy: environment.network_policy, secret_ref_id: null });
+    expect(JSON.parse(String(createInit.body))).toEqual({ name: "staging", base_url: environment.base_url, network_policy: { allowed_domains: ["staging.example.test"] }, secret_ref_id: null });
     fireEvent.click(screen.getByRole("button", { name: "读取快照" }));
     expect(await screen.findByText(/未关联 SecretRef/)).toBeInTheDocument();
     const [snapshotUrl] = fetchMock.mock.calls[3] as [string, RequestInit];
