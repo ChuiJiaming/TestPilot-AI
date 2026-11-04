@@ -2,8 +2,6 @@
 
 <img src="branding/sureshot-full-light.svg" alt="Sureshot" width="420"/>
 
-# Sureshot
-
 **面向企业 Web 应用的 AI 辅助自动化测试平台**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
