@@ -32,7 +32,7 @@ function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "发生未知错误，请稍后重试。";
 }
 
-/** 灵验 Sureshot 品牌符号：灵光（火花）+ 判定（对勾），对勾跟随文字颜色。 */
+/** Sureshot 品牌符号：灵光（火花）+ 判定（对勾），对勾跟随文字颜色。 */
 function SureshotMark({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={(size * 44) / 40} viewBox="0 0 40 44" aria-hidden="true" style={{ flex: "none" }}>
@@ -82,11 +82,11 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (auth: AuthR
     finally { setBusy(false); }
   }
 
-  const title = mode === "login" ? "欢迎回来" : mode === "register" ? "创建灵验账户" : "验证邮箱";
+  const title = mode === "login" ? "欢迎回来" : mode === "register" ? "创建 Sureshot 账户" : "验证邮箱";
   return (
     <main className="auth-layout">
       <section className="auth-story">
-        <a className="brand brand-large" href="#home"><span className="brand-mark"><SureshotMark size={22} /></span> 灵验 <b>Sureshot</b></a>
+        <a className="brand brand-large" href="#home"><span className="brand-mark"><SureshotMark size={22} /></span> Sureshot</a>
         <div className="story-copy">
           <div className="eyebrow"><Sparkles size={15} /> AI WEB TESTING PLATFORM</div>
           <h1>把复杂的 Web 测试，<br /><em>交给智能体协作。</em></h1>
@@ -96,10 +96,10 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (auth: AuthR
             <div><span><Layers3 size={18} /></span><div><b>完整运行证据</b><small>步骤、截图与报告关联到不可变运行事实</small></div></div>
           </div>
         </div>
-        <div className="story-footer">灵验 Sureshot · AI Web Quality</div>
+        <div className="story-footer">Sureshot · AI Web Quality</div>
       </section>
       <section className="auth-panel">
-        <div className="auth-mobile-brand brand"><span className="brand-mark"><SureshotMark size={20} /></span> 灵验 <b>Sureshot</b></div>
+        <div className="auth-mobile-brand brand"><span className="brand-mark"><SureshotMark size={20} /></span> Sureshot</div>
         <Card className="auth-card">
           <div className="auth-card-heading"><div className="eyebrow muted">SECURE WORKSPACE</div><h2>{title}</h2><p>{mode === "login" ? "登录以访问组织和项目。" : mode === "register" ? "使用工作邮箱创建账户，完成验证后即可登录。" : "验证完成后，账户才会激活。"}</p></div>
           <form onSubmit={submit} className="form-stack">
@@ -199,7 +199,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#workspace"><span className="brand-mark"><SureshotMark size={19} /></span> 灵验 <b>Sureshot</b></a>
+        <a className="brand" href="#workspace"><span className="brand-mark"><SureshotMark size={19} /></span> Sureshot</a>
         <div className="workspace-switch"><span className="workspace-avatar">{(organizations[0]?.name ?? "T").slice(0, 1).toUpperCase()}</span><div><small>工作空间</small><strong>{organizations[0]?.name ?? "我的工作空间"}</strong></div><ChevronDown size={16} /></div>
         <div className="nav-label">工作区</div>
         <nav className="main-nav" aria-label="主导航">
@@ -220,7 +220,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
           <NavItem icon={<Monitor size={17} />} label="安全与会话" active={page === "sessions"} onClick={() => setPage("sessions")} />
           <NavItem icon={<KeyRound size={17} />} label="邀请与凭据" active={page === "access"} onClick={() => setPage("access")} />
         </nav>
-        <div className="sidebar-bottom"><div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><div><b>需要帮助？</b><small>查看平台使用指南</small></div></div><div className="sidebar-version">灵验 Sureshot <span>V10.3</span></div></div>
+        <div className="sidebar-bottom"><div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><div><b>需要帮助？</b><small>查看平台使用指南</small></div></div><div className="sidebar-version">Sureshot <span>V10.3</span></div></div>
       </aside>
       <main className="main-area">
         <header className="topbar"><div className="breadcrumbs">工作区 <span>/</span> <strong>{pageTitle}</strong></div><div className="top-actions"><Button variant="ghost" className="icon-button" aria-label="刷新数据" onClick={() => void loadWorkspace()}><RefreshCw size={16} /></Button><div className="user-chip"><div className="user-avatar">{(auth.user.display_name || auth.user.email).slice(0, 1).toUpperCase()}</div><div><strong>{auth.user.display_name}</strong><small>{auth.user.email}</small></div><Button variant="ghost" className="icon-button" aria-label="退出登录" onClick={() => void signOut()}><LogOut size={16} /></Button></div></div></header>

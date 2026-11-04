@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 96" role="img" aria-label="灵验 横排标识，浅色背景">
-  <title>灵验 LingYan — light</title>
-  <g transform="translate(10,18) scale(1.05)">
-    <path d="M20 0 C21.3 7.3 26.7 12.7 34 14 C26.7 15.3 21.3 20.7 20 28 C18.7 20.7 13.3 15.3 6 14 C13.3 12.7 18.7 7.3 20 0 Z" fill="#FF5C16"/>
-    <path d="M8 33 L15 40 L32 21" fill="none" stroke="#111113" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
-  </g>
-  <text x="72" y="52" font-family="'PingFang SC','Microsoft YaHei','SimHei',sans-serif" font-size="38" font-weight="700" letter-spacing="2" fill="#111113">灵验</text>
-  <text x="74" y="76" font-family="Inter, 'Segoe UI', 'PingFang SC', sans-serif" font-size="12.5" font-weight="500" letter-spacing="2" fill="#FF5C16">SURESHOT · AI WEB 测试智能体</text>
-</svg>

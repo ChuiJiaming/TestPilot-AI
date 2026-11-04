@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 96" role="img" aria-label="Sureshot wordmark, light background">
-  <title>Sureshot · 灵验 — light</title>
+  <title>Sureshot — light</title>
   <g transform="translate(4,16)">
     <rect x="0" y="0" width="64" height="64" rx="15" fill="#111113"/>
     <g transform="translate(13,11) scale(0.95)">
@@ -8,5 +8,5 @@
     </g>
   </g>
   <text x="88" y="50" font-family="Inter, 'Segoe UI', sans-serif" font-size="34" font-weight="800" letter-spacing="-0.5" fill="#111113">Sureshot</text>
-  <text x="90" y="74" font-family="Inter, 'Segoe UI', 'PingFang SC', sans-serif" font-size="12.5" font-weight="500" letter-spacing="2" fill="#FF5C16">灵验 · AI WEB TESTING AGENT</text>
+  <text x="90" y="74" font-family="Inter, 'Segoe UI', 'PingFang SC', sans-serif" font-size="12.5" font-weight="500" letter-spacing="2" fill="#FF5C16">AI WEB TESTING AGENT</text>
 </svg>
