@@ -85,6 +85,11 @@ GET https://127.0.0.1:9443/internal/health/ready
 
 汇总行：**43 PASS / 0 FAIL**。
 
+后端回归：`pytest tests` → **307 passed / 4 skipped / 1 failed**。唯一失败是
+`tests/test_m14_routes.py::test_baseline_integration_operation_ids_are_registered`，
+已在基线提交 `4764f0e` 的独立 worktree 上复现，**与本轮改动无关**
+（集成路由是否注册取决于环境配置）。
+
 ## 6. 本轮修掉的缺陷（都是"单测结构上看不到"的那类）
 
 ### 6.1 httpx 0.28 的 mTLS 语义变化 —— 网关调用全挂
