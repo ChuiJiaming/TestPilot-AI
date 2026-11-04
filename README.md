@@ -83,7 +83,7 @@
 
 四条纵向边界，刻意分开部署。浏览器是最不可信的一环（SSRF、DNS 重绑定、恶意页面），因此 Worker 与业务 API 物理隔离：
 
-<div align="center"><img src="docs/images/architecture.svg" alt="Sureshot 平台总体架构" width="100%"/></div>
+<div align="center"><img src="docs/images/sureshot-architecture.svg" alt="Sureshot 平台总体架构" width="100%"/></div>
 
 ### Run 执行骨干
 
