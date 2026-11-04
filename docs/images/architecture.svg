@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" font-family="'Segoe UI','Microsoft YaHei',system-ui,sans-serif">
   <rect width="1200" height="780" fill="#FFFFFF"/>
-  <text x="600" y="42" text-anchor="middle" font-size="24" font-weight="700" fill="#0F172A">TestPilot AI · 平台总体架构</text>
+  <text x="600" y="42" text-anchor="middle" font-size="24" font-weight="700" fill="#0F172A">Sureshot · 平台总体架构</text>
   <text x="600" y="68" text-anchor="middle" font-size="13" fill="#64748B">四条纵向边界，物理分离部署 —— 把 AI 放在「建议位」，把裁判权留在「确定性」手里</text>
 
   <!-- Nginx 顶栏 -->

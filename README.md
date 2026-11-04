@@ -211,7 +211,7 @@ Vite 默认把 `/api` 转发到 `http://127.0.0.1:8000`，可用 `TESTPILOT_API_
 ### 项目结构
 
 ```
-TestPilot-AI/
+Sureshot/
 ├── apps/
 │   ├── web/                 React + TypeScript + Vite 单页应用
 │   ├── api/                 FastAPI 业务 API、租户权限、持久化、Run 服务
