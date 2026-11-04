@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Activity, Boxes, Building2, Bug, CalendarClock, ChevronDown, CircleHelp, FileCode2, FileText, KeyRound, Layers3, LogOut, Monitor, Play, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, UsersRound, Webhook, Workflow } from "lucide-react";
+import { Activity, Boxes, Building2, Bug, CalendarClock, ChevronDown, CircleHelp, FileCode2, FileText, KeyRound, Layers3, LogOut, Monitor, Play, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, UsersRound, Webhook } from "lucide-react";
 import { api, ApiError, jsonBody, type ApiToken, type AuthResult, type Environment, type EnvironmentSnapshot, type Organization, type Project, type SecretRef, type Session } from "./api";
 import { Button } from "./components/ui/button";
 import { Card, CardTitle } from "./components/ui/card";
@@ -30,6 +30,16 @@ let sessionRefreshPromise: Promise<AuthResult> | undefined;
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "发生未知错误，请稍后重试。";
+}
+
+/** 灵验 Sureshot 品牌符号：灵光（火花）+ 判定（对勾），对勾跟随文字颜色。 */
+function SureshotMark({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={(size * 44) / 40} viewBox="0 0 40 44" aria-hidden="true" style={{ flex: "none" }}>
+      <path d="M20 0 C21.3 7.3 26.7 12.7 34 14 C26.7 15.3 21.3 20.7 20 28 C18.7 20.7 13.3 15.3 6 14 C13.3 12.7 18.7 7.3 20 0 Z" fill="#FF5C16" />
+      <path d="M8 33 L15 40 L32 21" fill="none" stroke="currentColor" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
 export function LoginScreen({ onAuthenticated }: { onAuthenticated: (auth: AuthResult) => void }) {
@@ -72,11 +82,11 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (auth: AuthR
     finally { setBusy(false); }
   }
 
-  const title = mode === "login" ? "欢迎回来" : mode === "register" ? "创建 TestPilot 账户" : "验证邮箱";
+  const title = mode === "login" ? "欢迎回来" : mode === "register" ? "创建灵验账户" : "验证邮箱";
   return (
     <main className="auth-layout">
       <section className="auth-story">
-        <a className="brand brand-large" href="#home"><span className="brand-mark"><Workflow size={22} /></span> TestPilot <b>AI</b></a>
+        <a className="brand brand-large" href="#home"><span className="brand-mark"><SureshotMark size={22} /></span> 灵验 <b>Sureshot</b></a>
         <div className="story-copy">
           <div className="eyebrow"><Sparkles size={15} /> AI WEB TESTING PLATFORM</div>
           <h1>把复杂的 Web 测试，<br /><em>交给智能体协作。</em></h1>
@@ -86,10 +96,10 @@ export function LoginScreen({ onAuthenticated }: { onAuthenticated: (auth: AuthR
             <div><span><Layers3 size={18} /></span><div><b>完整运行证据</b><small>步骤、截图与报告关联到不可变运行事实</small></div></div>
           </div>
         </div>
-        <div className="story-footer">TestPilot AI · Enterprise Web Quality</div>
+        <div className="story-footer">灵验 Sureshot · AI Web Quality</div>
       </section>
       <section className="auth-panel">
-        <div className="auth-mobile-brand brand"><span className="brand-mark"><Workflow size={20} /></span> TestPilot <b>AI</b></div>
+        <div className="auth-mobile-brand brand"><span className="brand-mark"><SureshotMark size={20} /></span> 灵验 <b>Sureshot</b></div>
         <Card className="auth-card">
           <div className="auth-card-heading"><div className="eyebrow muted">SECURE WORKSPACE</div><h2>{title}</h2><p>{mode === "login" ? "登录以访问组织和项目。" : mode === "register" ? "使用工作邮箱创建账户，完成验证后即可登录。" : "验证完成后，账户才会激活。"}</p></div>
           <form onSubmit={submit} className="form-stack">
@@ -189,7 +199,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#workspace"><span className="brand-mark"><Workflow size={19} /></span> TestPilot <b>AI</b></a>
+        <a className="brand" href="#workspace"><span className="brand-mark"><SureshotMark size={19} /></span> 灵验 <b>Sureshot</b></a>
         <div className="workspace-switch"><span className="workspace-avatar">{(organizations[0]?.name ?? "T").slice(0, 1).toUpperCase()}</span><div><small>工作空间</small><strong>{organizations[0]?.name ?? "我的工作空间"}</strong></div><ChevronDown size={16} /></div>
         <div className="nav-label">工作区</div>
         <nav className="main-nav" aria-label="主导航">
@@ -210,12 +220,12 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
           <NavItem icon={<Monitor size={17} />} label="安全与会话" active={page === "sessions"} onClick={() => setPage("sessions")} />
           <NavItem icon={<KeyRound size={17} />} label="邀请与凭据" active={page === "access"} onClick={() => setPage("access")} />
         </nav>
-        <div className="sidebar-bottom"><div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><div><b>需要帮助？</b><small>查看平台使用指南</small></div></div><div className="sidebar-version">TestPilot AI <span>V10.3</span></div></div>
+        <div className="sidebar-bottom"><div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><div><b>需要帮助？</b><small>查看平台使用指南</small></div></div><div className="sidebar-version">灵验 Sureshot <span>V10.3</span></div></div>
       </aside>
       <main className="main-area">
         <header className="topbar"><div className="breadcrumbs">工作区 <span>/</span> <strong>{pageTitle}</strong></div><div className="top-actions"><Button variant="ghost" className="icon-button" aria-label="刷新数据" onClick={() => void loadWorkspace()}><RefreshCw size={16} /></Button><div className="user-chip"><div className="user-avatar">{(auth.user.display_name || auth.user.email).slice(0, 1).toUpperCase()}</div><div><strong>{auth.user.display_name}</strong><small>{auth.user.email}</small></div><Button variant="ghost" className="icon-button" aria-label="退出登录" onClick={() => void signOut()}><LogOut size={16} /></Button></div></div></header>
         <section className="page-content">
-          <div className="page-heading"><div><div className="eyebrow muted">TESTPILOT AI · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "管理测试目标和不可变运行快照。" : page === "cases" ? "维护测试用例和版本审核；DSL 细节及历史兼容按契约清单处理。" : page === "planning" ? "管理 AI 生成任务、测试套件、执行计划与调度。" : page === "runs" ? "创建和观察 Run；数据库快照是状态依据，事件流用于进度更新。" : page === "quality" ? "复核 Analyzer 假设和发生证据，审批视觉基线并检查确定性差异。" : page === "reports" ? "查看不可变运行报告，异步生成并通过当前项目授权下载导出。" : page === "integrations" ? "管理组织集成、提交幂等 CI Run，并检查确定性门禁和 Webhook 投递。" : page === "operations" ? "查看模型调用额度、账户通知、组织审计记录和平台设置审批。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
+          <div className="page-heading"><div><div className="eyebrow muted">SURESHOT · PLATFORM</div><h1>{pageTitle}</h1><p>{page === "overview" ? "管理组织、项目和运行环境，准备开展可追溯的自动化测试。" : page === "projects" ? "配置团队工作空间，并管理项目级测试权限。" : page === "members" ? "查看项目成员，并按角色控制访问范围。" : page === "environments" ? "管理测试目标和不可变运行快照。" : page === "cases" ? "维护测试用例和版本审核；DSL 细节及历史兼容按契约清单处理。" : page === "planning" ? "管理 AI 生成任务、测试套件、执行计划与调度。" : page === "runs" ? "创建和观察 Run；数据库快照是状态依据，事件流用于进度更新。" : page === "quality" ? "复核 Analyzer 假设和发生证据，审批视觉基线并检查确定性差异。" : page === "reports" ? "查看不可变运行报告，异步生成并通过当前项目授权下载导出。" : page === "integrations" ? "管理组织集成、提交幂等 CI Run，并检查确定性门禁和 Webhook 投递。" : page === "operations" ? "查看模型调用额度、账户通知、组织审计记录和平台设置审批。" : page === "access" ? "发出一次性成员邀请，管理 API Token 与外部密钥版本引用。" : "查看登录设备，并撤销不再使用的访问。"}</p></div><div className="heading-meta" title={readiness ? JSON.stringify(readiness.checks) : "尚未获取就绪状态"}><span className={`system-dot ${readiness?.status === "not_ready" ? "system-dot-error" : readiness ? "" : "system-dot-muted"}`} />{readiness?.status === "ready" ? "API 依赖已就绪" : readiness?.status === "not_ready" ? "API 依赖未就绪" : "API 状态不可用"}</div></div>
           {error && <div className="alert alert-error page-alert" role="alert">{error}</div>}
           {loading ? <Loading /> : page === "overview" ? <Overview organizations={organizations} projects={projects} sessions={sessions} onNavigate={setPage} />
             : page === "projects" ? <ProjectsPage organizations={organizations} projects={projects} showOrgForm={showOrgForm} showProjectForm={showProjectForm} setShowOrgForm={setShowOrgForm} setShowProjectForm={setShowProjectForm} onCreateOrg={createOrganization} onCreateProject={createProject} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setPage("members"); }} />
@@ -244,7 +254,7 @@ function Loading() { return <div className="loading-panel"><span className="spin
 
 function Overview({ organizations, projects, sessions, onNavigate }: { organizations: Organization[]; projects: Project[]; sessions: Session[]; onNavigate: (page: Page) => void }) {
   return <>
-    <div className="welcome-banner"><div className="welcome-pattern" /><div className="welcome-copy"><span className="welcome-kicker"><Sparkles size={14} /> QUALITY ENGINEERING, REIMAGINED</span><h2>为下一次可靠发布做好准备。</h2><p>先组织项目与测试环境；运行和分析能力将在后续模块接入。</p></div><div className="welcome-art"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-core"><Workflow size={28} /></div><span className="art-node node-a" /><span className="art-node node-b" /><span className="art-node node-c" /></div></div>
+    <div className="welcome-banner"><div className="welcome-pattern" /><div className="welcome-copy"><span className="welcome-kicker"><Sparkles size={14} /> QUALITY ENGINEERING, REIMAGINED</span><h2>为下一次可靠发布做好准备。</h2><p>先组织项目与测试环境；运行和分析能力将在后续模块接入。</p></div><div className="welcome-art"><div className="art-orbit orbit-one" /><div className="art-orbit orbit-two" /><div className="art-core"><SureshotMark size={26} /></div><span className="art-node node-a" /><span className="art-node node-b" /><span className="art-node node-c" /></div></div>
     <div className="stat-grid"><StatCard icon={<Building2 />} label="组织" value={organizations.length} note="你有权访问的工作空间" tone="blue" /><StatCard icon={<Boxes />} label="项目" value={projects.length} note="已配置的测试项目" tone="violet" /><StatCard icon={<Monitor />} label="活跃会话" value={sessions.filter((item) => !item.revoked_at).length} note="当前账户的设备会话" tone="green" /></div>
     <div className="section-heading"><div><h2>开始使用</h2><p>从基础工作区配置开始，逐步建立测试资产。</p></div></div>
     <div className="quick-grid"><QuickCard icon={<Building2 />} index="01" title="配置组织与项目" text="建立项目边界，并分配团队访问权限。" onClick={() => onNavigate("projects")} /><QuickCard icon={<Layers3 />} index="02" title="添加测试环境" text="登记测试目标并关联受控的密钥引用。" onClick={() => onNavigate("environments")} /><QuickCard icon={<KeyRound />} index="03" title="检查账户安全" text="查看登录设备，及时撤销旧会话。" onClick={() => onNavigate("sessions")} /></div>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="灵验 App 图标">
+  <title>灵验 LingYan</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#111113"/>
+  <g transform="translate(13,11) scale(0.95)">
+    <path d="M20 0 C21.3 7.3 26.7 12.7 34 14 C26.7 15.3 21.3 20.7 20 28 C18.7 20.7 13.3 15.3 6 14 C13.3 12.7 18.7 7.3 20 0 Z" fill="#FF5C16"/>
+    <path d="M8 33 L15 40 L32 21" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

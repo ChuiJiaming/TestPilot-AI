@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 96" role="img" aria-label="Sureshot wordmark, dark background">
+  <title>Sureshot · 灵验 — dark</title>
+  <g transform="translate(4,16)">
+    <rect x="0" y="0" width="64" height="64" rx="15" fill="#FFFFFF"/>
+    <g transform="translate(13,11) scale(0.95)">
+      <path d="M20 0 C21.3 7.3 26.7 12.7 34 14 C26.7 15.3 21.3 20.7 20 28 C18.7 20.7 13.3 15.3 6 14 C13.3 12.7 18.7 7.3 20 0 Z" fill="#FF5C16"/>
+      <path d="M8 33 L15 40 L32 21" fill="none" stroke="#111113" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+  <text x="88" y="50" font-family="Inter, 'Segoe UI', sans-serif" font-size="34" font-weight="800" letter-spacing="-0.5" fill="#FFFFFF">Sureshot</text>
+  <text x="90" y="74" font-family="Inter, 'Segoe UI', 'PingFang SC', sans-serif" font-size="12.5" font-weight="500" letter-spacing="2" fill="#FF8A50">灵验 · AI WEB TESTING AGENT</text>
+</svg>
