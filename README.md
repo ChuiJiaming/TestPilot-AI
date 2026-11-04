@@ -167,7 +167,7 @@ AI 负责辅助生成场景、整理页面观察、给出解释；**测试结果
 | M02 | 成员移除即时失效访问权 | ✅ |
 | M03 | 测试环境 CRUD、环境快照 | ✅ 已端到端验证 |
 | M03 | SecretRef 元数据（密钥值永不出现在响应里） | 🚧 |
-| M03 | 环境健康检查（经 mTLS 网关 + HTTP 探针） | 🚧 需网关/Woker |
+| M03 | 环境健康检查（经 mTLS 网关 + HTTP 探针） | ✅ 已验证（`HEALTHY`） |
 
 ### 测试资产（M04–M06）
 
@@ -191,15 +191,15 @@ AI 负责辅助生成场景、整理页面观察、给出解释；**测试结果
 | M07 | LangGraph 有界规划器 / 探索器 | 🚧 需 LLM 凭据 |
 | M07 | 预算闸门：超预算立即停止模型调用 | 🚧 |
 | M07 | Postgres Checkpoint 断点续跑 | 🚧 |
-| M08 | mTLS Worker 注册、心跳、就绪发现 | 🚧 证书未配置 |
-| M08 | 最小负载分配、Worker 会话亲和 | 🚧 |
+| M08 | mTLS Worker 注册、心跳、就绪发现 | ✅ 已端到端验证（DEV 自签证书） |
+| M08 | 最小负载分配、Worker 会话亲和 | 🚧 单 Worker 已验证，多 Worker 未验 |
 | M08 | Worker 出口 ACL（DNS 固定 + 默认拒绝） | ⚠️ 脚本为候选，未应用 |
 | M09 | Run 创建/查询/取消/暂停/恢复/重试 | ✅ 已端到端验证 |
 | M09 | Run 状态机与终态约束 | ✅ 已端到端验证 |
 | M09 | SSE 实时事件流（一次性票据 + cookie） | ✅ 已验证建流，断线重连未验 |
 | M09 | Outbox → Celery 异步准入 | ✅ 已端到端验证 |
 | M09 | 租约、心跳、过期回收 | 🚧 并发场景未压测 |
-| M09 | 确定性 DSL 执行器与断言引擎 | 🚧 需真实浏览器 |
+| M09 | 确定性 DSL 执行器与断言引擎 | ✅ 已端到端验证（真实 PASS/FAIL） |
 | M09 | Run Console 控制台 | 🚧 |
 
 ### 恢复与质量分析（M10–M12）
@@ -355,11 +355,16 @@ TESTPILOT_DATABASE_URL=postgresql://... PYTHONPATH=. \
 - 运行时路由注册 **101/101 基线 + 27/27 附加**
 - 黄金路径端到端（无 LLM）**29 PASS / 0 FAIL**
 - 报告四格式导出 **4/4**，artifact 字节级回读 **6/6**
+- 真实浏览器链路（mTLS Gateway + Worker + Playwright）**43 PASS / 0 FAIL**：
+  健康检查 `HEALTHY`、PASS 用例 `PASSED`、错误断言 `FAILED`、截图 sha256 与库中记录一致
 
 仍未验证（不得视为通过）：
 
 - 真实 AI 生成链路（需 LLM provider 凭据）
-- 真实浏览器执行 / mTLS / 证据采集（截图、trace、HAR）
+- 多 Worker 负载分配与会话亲和（当前单 Worker）
+- Worker 出口 ACL（脚本为 CANDIDATE，未应用）
+- trace / HAR 证据采集 —— **并未实现**，只有截图落盘
+- 邀请邮件链路（未接入通知管道）
 - Phase 6 部署真机验收（`nginx -t`、`pm2 ls`）
 - SSE 断线重连
 - PostgreSQL 15 兼容性
@@ -377,6 +382,8 @@ TESTPILOT_DATABASE_URL=postgresql://... PYTHONPATH=. \
 | 3 | `run_cases.browser` 与 `browser_name` 双列并存 | 语义重叠，待决策 |
 | 4 | `generation_jobs.requester_id` 与 `created_by` 并存 | 同上 |
 | 5 | `reports.artifact_id` 空悬字段 | 声明了但从不写入，无功能影响 |
+| 6 | `ArtifactView` 不返回 `sha256`（库中已存） | 接入方无法自行做证据字节级校验 |
+| 7 | 邀请邮件未接入通知管道 | Mailpit 收不到邀请邮件，token 只在创建响应返回 |
 
 ---
 
@@ -389,6 +396,7 @@ TESTPILOT_DATABASE_URL=postgresql://... PYTHONPATH=. \
 - [阶段二未决契约与业务决策](docs/decisions/phase-2-open-issues.md)
 - [迁移验证记录](docs/2026-11-03-migration-validation.md)
 - [Phase C-lite 端到端验证](docs/2026-11-03-phase-c-lite-end-to-end.md)
+- [真实浏览器链路验证](docs/2026-11-04-browser-chain-validation.md)
 - [API 与 OpenAPI 契约](api/openapi.yaml)
 - [PostgreSQL 迁移说明](db/migrations/README.md)
 - [Browser Gateway](apps/browser_gateway/README.md) · [Browser Worker](apps/browser_worker/README.md)

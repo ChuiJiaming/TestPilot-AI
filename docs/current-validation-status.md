@@ -1,4 +1,4 @@
-# Current Validation Status (authoritative as of 2026-11-03)
+# Current Validation Status (authoritative as of 2026-11-04)
 
 > 这是项目当前**唯一权威**的验证数字快照。此前分散在
 > `phase-1-4-unified-validation.md`、`TestPilot_AI_V10.3_验证记录.txt`、
@@ -62,10 +62,34 @@ PYTHONPATH=. python -m pytest tests -q -rs
 下暴露的缺陷（三处 `project_id` 漏写、worker 模型注册缺失、`viewport` 写成 JSON
 `null`）。
 
+## 真实浏览器链路（2026-11-04，首次验证通过）
+
+驱动：`.e2e-logs/browser_chain.py`，靶场 `https://example.com`（公网，SSRF 策略禁止本机靶场）。
+
+| 检查项 | 结果 |
+|---|---|
+| Worker mTLS 注册 / 15s 心跳 / Gateway 就绪汇聚 | 通过（`ready=true, capacity=2`） |
+| 无客户端证书访问 Gateway | 拒绝（`alert certificate required`） |
+| 环境健康检查（API→网关→Worker→目标站） | `HEALTHY`（`http=206`） |
+| 真实浏览器 PASS 用例 | Run `61429b21` **PASSED**（11.3s） |
+| 真实浏览器 FAIL 用例（错误断言） | Run `b936931f` **FAILED**（9.1s） |
+| 每 Run 步骤 | 3 条（1 action + 2 assertion），状态与判定一致 |
+| 截图证据 + 字节回读 | 38229 B，`sha256=8010e303df0f7d74…` 与库中记录一致，1280×720，redacted |
+| 驱动汇总 | **43 PASS / 0 FAIL** |
+
+本轮修掉两个只在真实依赖下暴露的缺陷：httpx 0.28 的 mTLS 证书不再被 request 级
+`cert=` 接受（客户端证书静默不发），以及 Node 20+ Happy Eyeballs 以 `{all:true}`
+调用自定义 lookup 导致健康探针恒定 `ERR_INVALID_IP_ADDRESS`。
+详见 `2026-11-04-browser-chain-validation.md`。
+
 ## 仍为未验证 / 阻塞项（不得视为通过）
 
 - **真实 AI 生成链路（Phase C 完整版）**：未做，需 LLM provider 凭据。
-- **真实浏览器 / mTLS / Worker 出口 ACL**：未验证（`worker-egress-acl.sh` 为 CANDIDATE，未应用）。无 Browser Gateway 时 Run 只能走到 `ERROR (BROWSER_GATEWAY_NOT_CONFIGURED)`，证据采集（截图/trace/HAR）完全未验。
+- **Worker 出口 ACL**：未应用（`worker-egress-acl.sh` 仍为 CANDIDATE）。
+- **多 Worker 负载分配与会话亲和**：未验（本轮只有 1 个 Worker）。
+- **证据采集范围**：真实浏览器已出截图（字节可回读）；**trace / HAR 只存在于
+  `artifact_type` 枚举，没有任何生产写入路径**，不得宣称已采集。
+- **邀请邮件链路**：未接入通知管道，Mailpit 收不到邀请邮件，token 只随创建响应返回。
 - **部署验收（Phase 6 已产出配置，未在真实主机跑 `nginx -t` / `pm2 ls`）**。
 - **SSE 断线重连**：未验（仅验了首次建流）。
 - **迁移 011 的邮件 Outbox 加密密钥路径**：应用时未配置 `TESTPILOT_EMAIL_OUTBOX_ENCRYPTION_KEYS`，运行期行为未验证。
@@ -81,6 +105,8 @@ PYTHONPATH=. python -m pytest tests -q -rs
 | 3 | `run_cases.browser`（002）与 `browser_name` 双列并存 | 语义重叠，待决策 |
 | 4 | `generation_jobs.requester_id`（002）与 `created_by` 并存 | 同上 |
 | 5 | `reports.artifact_id` 空悬字段 | 声明了但从不写入，无功能影响 |
+| 6 | `ArtifactView` 不返回 `sha256`（`test_artifacts` 已存） | 接入方无法自行做证据字节级校验 |
+| 7 | 邀请邮件未接入通知管道 | 被邀请人拿不到邮件，只能依赖创建响应里的 token |
 
 ## 关键认知（供后续接手人）
 
