@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import httpx
 import jwt
 
+from apps.api.app.core.mtls import client_ssl_context
 from apps.api.app.environments.health_check import (
     HealthCheckPolicyError,
     validate_health_check_target,
@@ -288,11 +289,13 @@ class BrowserGatewayExecutionClient:
 
     def _post(self, path: str, payload: dict):
         try:
-            response = httpx.post(
-                self.base_url + path, json=payload,
-                cert=(self.client_cert, self.client_key), verify=self.ca_bundle,
+            # httpx 0.28 silently ignores cert=, so the mTLS material must go into an
+            # explicit SSLContext; see apps/api/app/core/mtls.py.
+            with httpx.Client(
+                verify=client_ssl_context(self.client_cert, self.client_key, self.ca_bundle),
                 timeout=self.timeout_seconds, follow_redirects=False,
-            )
+            ) as client:
+                response = client.post(self.base_url + path, json=payload)
             if response.status_code != 200:
                 code = "BROWSER_WORKER_REJECTED"
                 try:

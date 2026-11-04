@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { domainToASCII } from "node:url";
 import ipaddr from "ipaddr.js";
 import { chromium, firefox, webkit } from "playwright";
-import { resolveWorkerHostname } from "./worker_dns.mjs";
+import { pinnedLookup, resolveWorkerHostname } from "./worker_dns.mjs";
 
 const sessions = new Map();
 let draining = false;
@@ -211,7 +211,7 @@ class PinnedEgressProxy {
       path: pinned.target.pathname + pinned.target.search,
       headers,
       timeout: actionTimeoutMs,
-      lookup: (_host, _options, callback) => callback(null, pinned.address.address, pinned.address.family),
+      lookup: pinnedLookup(pinned.address),
     }, (response) => {
       client.writeHead(response.statusCode || 502, response.headers);
       response.pipe(client);

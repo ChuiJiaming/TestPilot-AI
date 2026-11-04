@@ -27,8 +27,7 @@ async function resolveRecord(hostname, family) {
   }
 }
 
-export async function resolveWorkerHostname(hostname) {
-  if (net.isIP(hostname)) {
+export async function resolveWorkerHostname(hostname) {  if (net.isIP(hostname)) {
     return [{ address: hostname, family: net.isIP(hostname) }];
   }
   if (!dnsServer) return systemLookup(hostname, { all: true, verbatim: true });
@@ -40,4 +39,19 @@ export async function resolveWorkerHostname(hostname) {
   const answers = [...ipv4, ...ipv6];
   if (!answers.length) throw Object.assign(new Error("DNS_NO_ADDRESS"), { code: "ENOTFOUND" });
   return answers;
+}
+
+/**
+ * Lookup callback that always answers with the already-resolved, policy-checked
+ * address. Node 20+ enables Happy Eyeballs by default and then calls lookup with
+ * `all: true`, which requires an array answer; replying with a single address
+ * raises ERR_INVALID_IP_ADDRESS and every pinned connection fails.
+ */
+export function pinnedLookup(entry) {
+  return (_hostname, options, callback) => {
+    if (options && options.all) {
+      return callback(null, [{ address: entry.address, family: entry.family }]);
+    }
+    return callback(null, entry.address, entry.family);
+  };
 }

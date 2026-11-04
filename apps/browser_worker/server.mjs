@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { domainToASCII } from "node:url";
 import ipaddr from "ipaddr.js";
 import { browserWorkerReadiness, handleBrowserWorkerRequest } from "./browser_sessions.mjs";
-import { resolveWorkerHostname } from "./worker_dns.mjs";
+import { pinnedLookup, resolveWorkerHostname } from "./worker_dns.mjs";
 
 const port = Number(process.env.TESTPILOT_WORKER_PORT ?? "9444");
 const maxBodyBytes = 32 * 1024;
@@ -96,7 +96,7 @@ async function probe(payload) {
       path: `${target.pathname || "/"}${target.search}`,
       method: "GET", headers: { host: target.host, "user-agent": "TestPilot-HealthCheck/1.0", range: "bytes=0-0", connection: "close" },
       timeout: requestTimeoutMs,
-      lookup: (_host, _options, callback) => callback(null, address.address, address.family),
+      lookup: pinnedLookup(address),
       ...(target.protocol === "https:" ? { servername: hostname, rejectUnauthorized: true } : {}),
     };
     const request = transport.request(options, (response) => {

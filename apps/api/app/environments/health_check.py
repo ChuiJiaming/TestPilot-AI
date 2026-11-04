@@ -15,6 +15,8 @@ from uuid import UUID
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from apps.api.app.core.mtls import client_ssl_context
+
 
 class HealthCheckStatus:
     HEALTHY = "HEALTHY"
@@ -158,11 +160,13 @@ class BrowserGatewayHealthClient:
             "resolve_and_pin_dns": True,
         }
         try:
-            response = httpx.post(
-                self.endpoint, json=payload,
-                cert=(self.client_cert, self.client_key), verify=self.ca_bundle,
+            # httpx 0.28 silently ignores cert=, so the mTLS material must go into an
+            # explicit SSLContext; see apps/api/app/core/mtls.py.
+            with httpx.Client(
+                verify=client_ssl_context(self.client_cert, self.client_key, self.ca_bundle),
                 timeout=self.timeout_seconds, follow_redirects=False,
-            )
+            ) as client:
+                response = client.post(self.endpoint, json=payload)
             if response.status_code != 200:
                 raise HealthCheckGatewayUnavailable("Browser Gateway rejected or failed the health check")
             result = HealthCheckResult.model_validate(response.json())
