@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="branding/sureshot-full-light.svg" alt="Sureshot" width="420"/>
+<img src="branding/sureshot-logo.svg" alt="Sureshot" width="340"/>
 
 **面向企业 Web 应用的 AI 辅助自动化测试平台**
 
