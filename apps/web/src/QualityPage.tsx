@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, type Project } from "./api";
 import { Button } from "./components/ui/button";
+import { Modal } from "./components/ui/modal";
 import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -108,6 +109,7 @@ export function QualityPage({ projects, project, onSelectProject, accessToken, c
   const [baselineReason, setBaselineReason] = useState("");
   const [proposalArtifactId, setProposalArtifactId] = useState("");
   const [maskText, setMaskText] = useState("[]");
+  const [showProposalForm, setShowProposalForm] = useState(false);
   const [maxPixelRatio, setMaxPixelRatio] = useState("0.01");
   const [channelTolerance, setChannelTolerance] = useState("0");
   const [loading, setLoading] = useState(false);
@@ -222,6 +224,7 @@ export function QualityPage({ projects, project, onSelectProject, accessToken, c
         }),
       }, accessToken);
       setBaselines((current) => [result, ...current]);
+      setShowProposalForm(false);
       setNotice("基线候选已提交，需由另一位有权成员审批后才能用于断言。");
     } catch (caught) { setError(messageOf(caught)); }
     finally { setBusy(false); }
@@ -263,8 +266,9 @@ export function QualityPage({ projects, project, onSelectProject, accessToken, c
       <section className="quality-section" aria-labelledby="baseline-heading">
         <div className="section-heading"><div><h2 id="baseline-heading">视觉基线</h2><p>审批人需要与候选创建者不同；审批后的上下文、遮罩和阈值作为版本配置保留。</p></div></div>
         <div className="quality-baseline-layout">
-          <Card className="quality-proposal-card"><CardTitle>提交基线候选</CardTitle><p>只能从当前项目的脱敏 PNG 截图创建候选。</p>
-            <form className="quality-form-stack" onSubmit={createProposal}>
+          <Card className="quality-proposal-card"><div className="quality-list-title"><CardTitle>提交基线候选</CardTitle><Button type="button" onClick={() => setShowProposalForm(true)}>提交候选</Button></div><p>只能从当前项目的脱敏 PNG 截图创建候选；审批人需要与候选创建者不同。</p>
+            {showProposalForm && <Modal wide title="提交基线候选" description="只能从当前项目的脱敏 PNG 截图创建候选。" onClose={() => setShowProposalForm(false)}>
+            <form className="form-stack" onSubmit={createProposal}>
               <div><Label htmlFor="proposal-artifact">候选截图</Label><select id="proposal-artifact" className="input" value={proposalArtifactId} onChange={(event) => setProposalArtifactId(event.target.value)}><option value="">选择一张运行截图</option>{screenshotOptions.map((item) => <option key={item.id} value={item.id}>{item.browser} · {item.viewport?.width}×{item.viewport?.height} · {new Date(item.created_at).toLocaleString("zh-CN")}</option>)}</select></div>
               <div><Label htmlFor="proposal-max-ratio">最大像素差异比例</Label><Input id="proposal-max-ratio" type="number" min="0" max="1" step="0.001" value={maxPixelRatio} onChange={(event) => setMaxPixelRatio(event.target.value)} required /></div>
               <div><Label htmlFor="proposal-tolerance">单通道容差（0–255）</Label><Input id="proposal-tolerance" type="number" min="0" max="255" step="1" value={channelTolerance} onChange={(event) => setChannelTolerance(event.target.value)} required /></div>
@@ -272,6 +276,7 @@ export function QualityPage({ projects, project, onSelectProject, accessToken, c
               {proposalArtifact && <p className="quality-context">固定上下文：版本 {proposalArtifact.case_version_id?.slice(0, 8)} · 环境 {proposalArtifact.environment_id?.slice(0, 8)} · 动作 {proposalArtifact.action_id?.slice(0, 8)} · {proposalArtifact.color_scheme} · DPR {proposalArtifact.device_scale_factor}</p>}
               <Button type="submit" disabled={busy || !proposalArtifact}>{busy ? "提交中…" : "提交基线候选"}</Button>
             </form>
+            </Modal>}
           </Card>
           <Card className="quality-baseline-list"><div className="quality-list-title"><CardTitle>基线记录</CardTitle><span>{baselines.length}</span></div>
             {baselines.length === 0 ? <p className="empty-inline">还没有基线候选。</p> : baselines.map((item) => <article className="quality-baseline-item" key={item.id}><div className="quality-baseline-header"><div><b>{item.browser} · {item.viewport.width}×{item.viewport.height}</b><small>版本 {item.case_version_id.slice(0, 8)} · {item.comparison_profile} · 阈值 {item.max_pixel_ratio}</small></div><span className={`quality-state state-${item.status.toLowerCase()}`}>{item.status === "PENDING" ? "等待审批" : item.status === "APPROVED" ? "已批准" : "已拒绝"}</span></div><PrivateArtifactImage artifactId={item.artifact_id} accessToken={accessToken} alt="基线截图" />{item.status === "PENDING" && (item.created_by === currentUserId ? <p className="quality-separation-note" role="note">候选创建者不能审批或拒绝；请由另一位有权项目成员处理。</p> : <div className="quality-decision"><Label htmlFor={`baseline-reason-${item.id}`}>基线审批原因</Label><Input id={`baseline-reason-${item.id}`} value={baselineReason} onChange={(event) => setBaselineReason(event.target.value)} maxLength={2000} placeholder="说明审批依据" /><div className="button-row"><Button type="button" disabled={busy || !baselineReason.trim()} onClick={() => void decideBaseline(item.id, "APPROVE")}>批准基线</Button><Button type="button" variant="danger" disabled={busy || !baselineReason.trim()} onClick={() => void decideBaseline(item.id, "REJECT")}>拒绝基线</Button></div></div>)}{item.decision_reason && <small className="quality-decision-reason">审批备注：{item.decision_reason}</small>}</article>)}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { api, jsonBody, type Organization, type Project, type SecretRef } from "./api";
 import { Button } from "./components/ui/button";
+import { Modal } from "./components/ui/modal";
 import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -47,6 +48,7 @@ export function IntegrationsPage({ organizations, projects, project, onSelectPro
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [secretRefs, setSecretRefs] = useState<SecretRef[]>([]);
   const [selectedIntegrationId, setSelectedIntegrationId] = useState("");
+  const [showIntegrationForm, setShowIntegrationForm] = useState(false);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
@@ -160,6 +162,7 @@ export function IntegrationsPage({ organizations, projects, project, onSelectPro
       }), accessToken);
       setIntegrations((current) => [created, ...current.filter((item) => item.id !== created.id)]);
       setSelectedIntegrationId(created.id);
+      setShowIntegrationForm(false);
       setNotice("集成已创建。浏览器只保存 SecretRef ID，不接收或保存密钥值。");
     } catch (caught) { setError(messageOf(caught)); }
     finally { setBusy(false); }
@@ -237,7 +240,7 @@ export function IntegrationsPage({ organizations, projects, project, onSelectPro
 
     {organizations.length > 0 && <div className="integrations-grid">
       <Card className="form-card">
-        <div className="integrations-card-heading"><div><CardTitle>组织集成</CardTitle><p>只登记 SecretRef；密钥值由部署侧密钥提供方解析。</p></div><span className="integrations-count">{integrations.length}</span></div>
+        <div className="integrations-card-heading"><div><CardTitle>组织集成</CardTitle><p>只登记 SecretRef；密钥值由部署侧密钥提供方解析。</p></div><div className="button-row"><span className="integrations-count">{integrations.length}</span><Button type="button" onClick={() => setShowIntegrationForm(true)}>添加集成</Button></div></div>
         {loading ? <p className="empty-inline">正在加载组织集成…</p> : !integrations.length
           ? <p className="empty-inline">该组织尚未配置集成。</p>
           : <div className="integrations-list">{integrations.map((item) => {
@@ -251,12 +254,13 @@ export function IntegrationsPage({ organizations, projects, project, onSelectPro
               <Button type="button" variant="secondary" disabled={busy} onClick={() => void toggleIntegration(item)}>{item.enabled ? "停用集成" : "启用集成"}</Button>
             </article>;
           })}</div>}
-        <form className="integrations-create-form" onSubmit={createIntegration}>
-          <h3>添加集成</h3>
+        {showIntegrationForm && <Modal title="添加集成" description="只登记 SecretRef 引用，密钥值由部署侧密钥提供方解析。" onClose={() => setShowIntegrationForm(false)}>
+          <form className="form-stack" onSubmit={createIntegration}>
           <div><Label htmlFor="integration-kind">集成类型</Label><select id="integration-kind" className="input" value={kind} onChange={(event) => setKind(event.target.value as Integration["kind"])}><option value="slack">Slack</option><option value="discord">Discord</option></select></div>
           <div><Label htmlFor="integration-secret-ref">SecretRef</Label><select id="integration-secret-ref" className="input" value={secretRefId} onChange={(event) => setSecretRefId(event.target.value)} required><option value="">选择 SecretRef</option>{visibleSecretRefs.map((ref) => <option key={ref.id} value={ref.id}>{ref.provider} · {ref.external_key} · v{ref.active_version ?? "?"}</option>)}</select><small>{selectedSecretRef ? `仅使用引用 ${selectedSecretRef.id}，不会读取密钥值。` : "请先在组织凭据中登记 SecretRef。"}</small></div>
           <Button disabled={busy || !organizationId || !secretRefId}>{busy ? "保存中…" : "添加集成"}</Button>
-        </form>
+          </form>
+        </Modal>}
       </Card>
 
       <Card className="form-card ci-card">

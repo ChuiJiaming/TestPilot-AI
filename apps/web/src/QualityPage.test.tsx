@@ -125,6 +125,7 @@ describe("QualityPage", () => {
   it("creates a baseline proposal from a selected redacted screenshot", async () => {
     const requests = setupFetch();
     render(<QualityPage projects={[project]} project={project} onSelectProject={vi.fn()} accessToken="access" currentUserId="user-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: "提交候选" }));
     expect(await screen.findByLabelText("候选截图")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("候选截图"), { target: { value: "artifact-1" } });
     fireEvent.click(screen.getByRole("button", { name: "提交基线候选" }));

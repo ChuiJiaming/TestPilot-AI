@@ -28,6 +28,7 @@ describe("MembersPage", () => {
     render(<MembersPage project={project} accessToken="access-token" />);
 
     expect(await screen.findByText("Alice")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /授予项目角色/ }));
     fireEvent.change(screen.getByLabelText("组织成员"), { target: { value: "member-2" } });
     fireEvent.change(screen.getByLabelText("项目角色"), { target: { value: "developer" } });
     fireEvent.click(screen.getByRole("button", { name: /保存角色/ }));

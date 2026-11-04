@@ -104,9 +104,10 @@ describe("IntegrationsPage", () => {
     const requests = setupFetch();
     renderPage();
     await screen.findByRole("button", { name: /Slack.*prod\/slack-webhook/ });
+    fireEvent.click(screen.getAllByRole("button", { name: "添加集成" })[0]);
     fireEvent.change(screen.getByLabelText("集成类型"), { target: { value: "slack" } });
     fireEvent.change(screen.getByLabelText("SecretRef"), { target: { value: secretRef.id } });
-    fireEvent.click(screen.getByRole("button", { name: "添加集成" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "添加集成" })[1]);
 
     await waitFor(() => expect(requests.some((request) => request.method === "POST"
       && request.url.endsWith("/api/v1/integrations")

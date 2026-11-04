@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import { Activity, Bell, Check, Download, FileClock, RefreshCw, ShieldCheck } from "lucide-react";
 import { api, ApiError, jsonBody, type Organization } from "./api";
 import { Button } from "./components/ui/button";
+import { Modal } from "./components/ui/modal";
 import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
@@ -92,7 +93,7 @@ function formatDate(value: string) {
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("zh-CN").format(value);
+  return Number.isFinite(value) ? new Intl.NumberFormat("zh-CN").format(value) : "—";
 }
 
 function queryPath(path: string, query: URLSearchParams) {
@@ -113,6 +114,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   const [quotaLoading, setQuotaLoading] = useState(false);
   const [quotaReload, setQuotaReload] = useState(0);
   const [quotaBusy, setQuotaBusy] = useState(false);
+  const [showQuotaForm, setShowQuotaForm] = useState(false);
   const [quotaError, setQuotaError] = useState("");
   const [quotaLimitDraft, setQuotaLimitDraft] = useState("");
   const [concurrencyDraft, setConcurrencyDraft] = useState("");
@@ -285,6 +287,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
       setQuota(updated);
       setQuotaLimitDraft(String(updated.monthly_token_limit));
       setConcurrencyDraft(String(updated.max_concurrent_runs));
+      setShowQuotaForm(false);
     } catch (error) {
       setQuotaError(errorMessage(error));
     } finally {
@@ -480,11 +483,14 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
         <div className="operations-two-column">
           <Card className="operations-card">
             <div className="operations-card-heading"><div><CardTitle>配额策略</CardTitle><p>预留量与已结算用量共同参与调用前额度检查。</p></div><span className={`operations-role ${isOrganizationAdmin ? "admin" : ""}`}>{isOrganizationAdmin ? "组织管理员" : "只读"}</span></div>
-            <form className="operations-quota-form" onSubmit={(event) => void saveQuota(event)}>
-              <div><Label htmlFor="quota-monthly-token-limit">每月模型 Token 额度</Label><Input id="quota-monthly-token-limit" type="number" min={0} step={1} value={quotaLimitDraft} onChange={(event) => setQuotaLimitDraft(event.target.value)} disabled={!isOrganizationAdmin} required /></div>
-              <div><Label htmlFor="quota-max-concurrent-runs">最大并发 Run</Label><Input id="quota-max-concurrent-runs" type="number" min={1} max={1000} step={1} value={concurrencyDraft} onChange={(event) => setConcurrencyDraft(event.target.value)} disabled={!isOrganizationAdmin} required /></div>
-              {isOrganizationAdmin ? <Button type="submit" disabled={quotaBusy}>{quotaBusy ? "正在保存…" : "保存配额策略"}</Button> : <p className="operations-note">只有组织管理员可以调整配额策略。</p>}
-            </form>
+            {isOrganizationAdmin && <div className="operations-card-heading-actions"><Button type="button" onClick={() => setShowQuotaForm(true)}>调整配额策略</Button></div>}
+            {showQuotaForm && isOrganizationAdmin && <Modal title="调整配额策略" description="预留量与已结算用量共同参与调用前额度检查。" onClose={() => setShowQuotaForm(false)}>
+              <form className="form-stack" onSubmit={(event) => void saveQuota(event)}>
+              <div><Label htmlFor="quota-monthly-token-limit">每月模型 Token 额度</Label><Input id="quota-monthly-token-limit" type="number" min={0} step={1} value={quotaLimitDraft} onChange={(event) => setQuotaLimitDraft(event.target.value)} required /></div>
+              <div><Label htmlFor="quota-max-concurrent-runs">最大并发 Run</Label><Input id="quota-max-concurrent-runs" type="number" min={1} max={1000} step={1} value={concurrencyDraft} onChange={(event) => setConcurrencyDraft(event.target.value)} required /></div>
+              <Button type="submit" disabled={quotaBusy}>{quotaBusy ? "正在保存…" : "保存配额策略"}</Button>
+              </form>
+            </Modal>}
           </Card>
           <Card className="operations-card">
             <div className="operations-card-heading"><div><CardTitle>用量指标</CardTitle><p>按组织记录的模型调用和执行资源指标。</p></div><Button variant="ghost" className="operations-refresh" type="button" onClick={() => setQuotaReload((current) => current + 1)} aria-label="刷新用量"><RefreshCw size={15} /></Button></div>

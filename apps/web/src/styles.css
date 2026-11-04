@@ -28,3 +28,22 @@
 .domains-editor{min-height:88px;height:auto;padding:10px 12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.7;resize:vertical}
 @media(max-width:760px){.policy-grid{grid-template-columns:1fr}}
 .policy-hint{display:block;margin-top:6px;font-size:10px;color:#9aa4b2}
+/* ===== 精简输入框与表单 ===== */
+.input{height:36px;padding:0 11px;font-size:12.5px}
+.label{font-size:11px;margin-bottom:5px}
+.form-stack{gap:13px}
+.form-stack .button{height:37px}
+.inline-form>.button{height:36px}
+.policy-editor{min-height:110px;font-size:12px;line-height:1.65}
+.button{font-size:12.5px}
+/* ===== 弹窗 ===== */
+@keyframes modal-in{from{opacity:0;transform:translateY(12px) scale(.98)}to{opacity:1;transform:none}}
+.modal-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-start;justify-content:center;padding:9vh 20px 40px;background:#1d27394d;backdrop-filter:blur(3px);animation:page-in .18s ease both;overflow:auto}
+.modal-card{width:100%;max-width:460px;background:#fff;border-radius:14px;box-shadow:0 24px 70px #16224a2e;border:1px solid #eceff5;padding:20px 22px;animation:modal-in .24s cubic-bezier(.22,.61,.36,1) both}
+.modal-card.modal-wide{max-width:680px}
+.modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:15px}
+.modal-head h3{font:700 15px Manrope,'Noto Sans SC',sans-serif;color:#26334a;margin:0;letter-spacing:-.3px}
+.modal-head p{font-size:10.5px;color:#8d98aa;margin:5px 0 0;line-height:1.55}
+.modal-close{flex:none;width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:8px;background:#f4f6fa;color:#8b96a8;cursor:pointer;transition:background .15s,color .15s}
+.modal-close:hover{background:#eaedf3;color:#4a5870}
+@media(max-width:760px){.modal-overlay{padding:16px 12px}.modal-card{padding:17px 16px}}
