@@ -157,74 +157,100 @@ def test_audit_verification_requires_organization_scope(operations_db):
         )
 
 
-def test_setting_request_does_not_change_current_value(operations_db):
+def _insert_pending_change(operations_db, *, value=True, key="maintenance_mode"):
+    """模拟改造前遗留的待审批变更，用于验证审批路径仍然可用。"""
+    from apps.api.app.operations.settings import _digest
+
+    with operations_db["sessions"].begin() as session:
+        current = session.scalar(select(SystemSettingRecord).where(
+            SystemSettingRecord.key == key,
+        ))
+        change = SystemSettingChangeRecord(
+            id=uuid4(), key=key, proposed_value=value,
+            previous_value_hash=_digest(current.value if current is not None else None),
+            proposed_value_hash=_digest(value),
+            requested_by=operations_db["requester_id"], approved_by=None,
+            status="PENDING", reason="Legacy proposal awaiting a second reviewer",
+            created_at=operations_db["now"], decided_at=None,
+        )
+        session.add(change)
+    return change.id
+
+
+def test_platform_admin_change_applies_immediately_without_approval(operations_db):
     service = SystemSettingService(operations_db["sessions"])
 
-    proposal = service.request_change(
+    result = service.request_change(
         operations_db["requester_id"], "maintenance_mode", value=True,
         reason="Enable maintenance window", now=operations_db["now"],
     )
 
-    assert proposal["status"] == "PENDING"
-    assert "proposed_value" not in proposal
+    assert result["status"] == "APPROVED"
+    assert result["approved_by"] == operations_db["requester_id"]
     with operations_db["sessions"]() as session:
         current = session.scalar(select(SystemSettingRecord).where(
             SystemSettingRecord.key == "maintenance_mode",
         ))
-        assert current.value is False
+        change = session.get(SystemSettingChangeRecord, result["id"])
+        audit = session.scalar(select(AuditLogRecord).where(
+            AuditLogRecord.action == "system_setting.applied",
+        ))
+        assert current.value is True
+        assert change.status == "APPROVED"
+        assert change.decided_at is not None
+        assert audit is not None
+        assert audit.metadata_json["mode"] == "direct"
+        assert audit.metadata_json["actor_id"] == str(operations_db["requester_id"])
+        # 审计里只能有哈希，不能出现设置值本身
+        assert "value" not in audit.metadata_json
+        assert "proposed_value" not in audit.metadata_json
 
 
-def test_requester_cannot_approve_own_change(operations_db):
+def test_direct_apply_marks_legacy_pending_proposals_stale(operations_db):
     service = SystemSettingService(operations_db["sessions"])
-    proposal = service.request_change(
+    legacy_id = _insert_pending_change(operations_db)
+
+    service.request_change(
         operations_db["requester_id"], "maintenance_mode", value=True,
-        reason="Enable maintenance window", now=operations_db["now"],
+        reason="Apply directly", now=operations_db["now"] + timedelta(minutes=1),
     )
+
+    with operations_db["sessions"]() as session:
+        assert session.get(SystemSettingChangeRecord, legacy_id).status == "STALE"
+
+
+def test_legacy_pending_change_cannot_be_approved_by_its_requester(operations_db):
+    service = SystemSettingService(operations_db["sessions"])
+    legacy_id = _insert_pending_change(operations_db)
 
     with pytest.raises(SettingForbidden):
         service.decide_change(
-            operations_db["requester_id"], proposal["id"], decision="approve",
+            operations_db["requester_id"], legacy_id, decision="approve",
             reason="Self approval", now=operations_db["now"] + timedelta(minutes=1),
         )
 
-
-def test_approval_and_audit_commit_atomically(operations_db):
-    service = SystemSettingService(operations_db["sessions"])
-    proposal = service.request_change(
-        operations_db["requester_id"], "maintenance_mode", value=True,
-        reason="Enable maintenance window", now=operations_db["now"],
-    )
-
     result = service.decide_change(
-        operations_db["approver_id"], proposal["id"], decision="approve",
-        reason="Reviewed maintenance window", now=operations_db["now"] + timedelta(minutes=1),
+        operations_db["approver_id"], legacy_id, decision="approve",
+        reason="Reviewed legacy proposal", now=operations_db["now"] + timedelta(minutes=2),
     )
 
     with operations_db["sessions"]() as session:
         current = session.scalar(select(SystemSettingRecord).where(
             SystemSettingRecord.key == "maintenance_mode",
         ))
-        change = session.get(SystemSettingChangeRecord, proposal["id"])
         audit = session.scalar(select(AuditLogRecord).where(
             AuditLogRecord.action == "system_setting.approved",
         ))
         assert current.value is True
-        assert change.status == "APPROVED"
-        assert change.approved_by == operations_db["approver_id"]
         assert audit is not None
-        assert audit.metadata_json["requester_id"] == str(operations_db["requester_id"])
         assert audit.metadata_json["approver_id"] == str(operations_db["approver_id"])
-        assert "proposed_value" not in audit.metadata_json
         assert "value" not in audit.metadata_json
     assert result["status"] == "APPROVED"
 
 
 def test_stale_proposal_conflicts_and_is_recorded(operations_db):
     service = SystemSettingService(operations_db["sessions"])
-    proposal = service.request_change(
-        operations_db["requester_id"], "maintenance_mode", value=True,
-        reason="Enable maintenance window", now=operations_db["now"],
-    )
+    legacy_id = _insert_pending_change(operations_db)
     with operations_db["sessions"].begin() as session:
         current = session.scalar(select(SystemSettingRecord).where(
             SystemSettingRecord.key == "maintenance_mode",
@@ -233,12 +259,12 @@ def test_stale_proposal_conflicts_and_is_recorded(operations_db):
 
     with pytest.raises(SettingStale):
         service.decide_change(
-            operations_db["approver_id"], proposal["id"], decision="approve",
+            operations_db["approver_id"], legacy_id, decision="approve",
             reason="Current setting changed", now=operations_db["now"] + timedelta(minutes=1),
         )
 
     with operations_db["sessions"]() as session:
-        assert session.get(SystemSettingChangeRecord, proposal["id"]).status == "STALE"
+        assert session.get(SystemSettingChangeRecord, legacy_id).status == "STALE"
 
 
 def test_secrets_are_not_written_to_audit_metadata(operations_db):

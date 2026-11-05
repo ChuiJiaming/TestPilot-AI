@@ -114,7 +114,8 @@ def test_setting_service_accepts_a_valid_model_config(model_db):
         reason="Configure the platform model provider", now=NOW,
     )
 
-    assert change["status"] == "PENDING"
+    assert change["status"] == "APPROVED"
+    assert change["approved_by"] == model_db["admin_id"]
     assert change["proposed_value_hash"]
 
 

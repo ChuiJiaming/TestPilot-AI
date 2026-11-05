@@ -108,12 +108,20 @@ class SystemSettingService:
                 SystemSettingChangeRecord.created_at.desc(),
                 SystemSettingChangeRecord.id.desc(),
             ).limit(200)).all()
+            recent = session.scalars(select(SystemSettingChangeRecord).where(
+                SystemSettingChangeRecord.status != "PENDING",
+            ).order_by(
+                SystemSettingChangeRecord.created_at.desc(),
+                SystemSettingChangeRecord.id.desc(),
+            ).limit(10)).all()
             return {"items": [{
                 "key": row.key,
                 "value_hash": _digest(row.value),
                 "updated_at": row.updated_at,
             } for row in rows], "pending_changes": [
                 self._change_dto(row) for row in pending
+            ], "recent_changes": [
+                self._change_dto(row) for row in recent
             ]}
 
     def list_changes(self, actor_id: UUID, *, status: str | None = None) -> dict:
@@ -139,39 +147,56 @@ class SystemSettingService:
         reason: str,
         now: datetime,
     ) -> dict:
+        """平台管理员保存即生效，不再要求第二位管理员审批。
+
+        调用方本身已被限制为平台管理员（``require_platform_admin``），
+        再要求「另一位管理员批准」会让只有一个管理员的部署永远改不了配置。
+        变更仍写入 ``system_setting_changes`` 作为历史（status=APPROVED，
+        申请人与生效人为同一人），审计记录两侧哈希，可追溯但不需要二次确认。
+        """
         _validate_setting(key, value)
         reason = _validate_reason(reason)
         timestamp = _now_utc(now)
         proposed_hash = _digest(value)
         with self.session_factory.begin() as session:
             self._require_platform_admin(session, actor_id, lock=True)
-            existing_pending = session.scalar(select(SystemSettingChangeRecord.id).where(
-                SystemSettingChangeRecord.key == key,
-                SystemSettingChangeRecord.status == "PENDING",
-            ).with_for_update())
-            if existing_pending is not None:
-                raise SettingConflict("a change for this setting is already pending")
             current = session.scalar(select(SystemSettingRecord).where(
                 SystemSettingRecord.key == key,
             ).with_for_update())
             previous_hash = _digest(current.value if current is not None else None)
+            if current is None:
+                current = SystemSettingRecord(
+                    id=uuid4(), key=key, value=value, updated_at=timestamp,
+                )
+                session.add(current)
+            else:
+                current.value = value
+                current.updated_at = timestamp
+            # 历史上可能残留待审批的同类变更，直接生效后它们就过期了。
+            for stale in session.scalars(select(SystemSettingChangeRecord).where(
+                SystemSettingChangeRecord.key == key,
+                SystemSettingChangeRecord.status == "PENDING",
+            )).all():
+                stale.status = "STALE"
+                stale.decided_at = timestamp
             change = SystemSettingChangeRecord(
                 id=uuid4(), key=key, proposed_value=value,
                 previous_value_hash=previous_hash, proposed_value_hash=proposed_hash,
-                requested_by=actor_id, approved_by=None, status="PENDING", reason=reason,
-                created_at=timestamp, decided_at=None,
+                requested_by=actor_id, approved_by=actor_id, status="APPROVED", reason=reason,
+                created_at=timestamp, decided_at=timestamp,
             )
             session.add(change)
             session.flush()
             append_audit_entry(
                 session, organization_id=None, actor_user_id=actor_id,
-                action="system_setting.requested", resource_type="system_setting_change",
+                action="system_setting.applied", resource_type="system_setting",
                 resource_id=change.id,
                 metadata={
                     "key": key,
                     "previous_value_hash": previous_hash,
                     "proposed_value_hash": proposed_hash,
-                    "requester_id": str(actor_id),
+                    "actor_id": str(actor_id),
+                    "mode": "direct",
                 },
                 created_at=timestamp,
             )

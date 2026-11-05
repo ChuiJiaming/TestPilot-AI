@@ -25,6 +25,7 @@ class MigrationRunnerTests(unittest.TestCase):
                                   for index, name in enumerate(names, start=1)])
         self.assertIn("018_m15_operations.sql", names)
         self.assertIn("019_password_reset.sql", names)
+        self.assertIn("020_setting_direct_apply.sql", names)
         self.assertNotIn("005_preflight_and_validate.sql", set(names))
 
     def test_m13_migration_adds_export_idempotency_and_lease_invariants(self):

@@ -8247,7 +8247,7 @@ paths:
       x-required-permissions: [platform:admin]
     put:
       tags: [Integrations & Operations]
-      summary: Propose a system-setting change for a second administrator to review
+      summary: Save a system setting; it takes effect immediately
       operationId: put__api_v1_system_settings
       security: [{BearerAuth: []}]
       requestBody:
@@ -13399,6 +13399,10 @@ components:
           items: {$ref: '#/components/schemas/SystemSetting'}
         pending_changes:
           type: array
+          items: {$ref: '#/components/schemas/SystemSettingChange'}
+        recent_changes:
+          type: array
+          description: Most recent decided changes (approved, rejected or stale). Platform administrators apply settings directly, so `approved` here means applied.
           items: {$ref: '#/components/schemas/SystemSettingChange'}
       required: [items, pending_changes]
     SystemSettingPathChangeRequest:

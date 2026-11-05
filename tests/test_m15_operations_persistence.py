@@ -125,14 +125,24 @@ def test_one_pending_setting_change_per_key(operations_db):
             ))
 
 
-def test_setting_approval_cannot_equal_requester(operations_db):
+def test_direct_apply_records_the_same_user_as_requester_and_applier(operations_db):
+    """平台管理员保存即生效：申请人与生效人可以是同一人，但 approved_by 不能为空。"""
+    with operations_db["sessions"].begin() as session:
+        session.add(SystemSettingChangeRecord(
+            id=uuid4(), key="retention_days", proposed_value=90,
+            previous_value_hash="0" * 64, proposed_value_hash="1" * 64,
+            requested_by=operations_db["user_id"], approved_by=operations_db["user_id"],
+            status="APPROVED", reason="Direct apply", created_at=operations_db["now"],
+            decided_at=operations_db["now"],
+        ))
+
     with pytest.raises(IntegrityError):
         with operations_db["sessions"].begin() as session:
             session.add(SystemSettingChangeRecord(
-                id=uuid4(), key="retention_days", proposed_value=90,
+                id=uuid4(), key="max_concurrent_runs", proposed_value=5,
                 previous_value_hash="0" * 64, proposed_value_hash="1" * 64,
-                requested_by=operations_db["user_id"], approved_by=operations_db["user_id"],
-                status="APPROVED", reason="Self approval", created_at=operations_db["now"],
+                requested_by=operations_db["user_id"], approved_by=None,
+                status="APPROVED", reason="Missing applier", created_at=operations_db["now"],
                 decided_at=operations_db["now"],
             ))
 

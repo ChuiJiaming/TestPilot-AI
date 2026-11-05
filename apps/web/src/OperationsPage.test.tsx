@@ -243,7 +243,7 @@ describe("OperationsPage", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
 
     expect(await screen.findByText("调用已就绪")).toBeInTheDocument();
-    expect(screen.getByText("数据库已批准设置", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("数据库设置（已生效）", { exact: false })).toBeInTheDocument();
     expect(screen.getAllByText("planner-large").length).toBeGreaterThanOrEqual(2);
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
 
@@ -264,7 +264,7 @@ describe("OperationsPage", () => {
     expect(screen.getByText("API_KEY_MISSING")).toBeInTheDocument();
   });
 
-  it("submits a model configuration change with pricing for approval", async () => {
+  it("saves a model configuration change with pricing and applies it immediately", async () => {
     const requests = setupFetch({ platformAdmin: true });
     render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
     fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
@@ -273,7 +273,7 @@ describe("OperationsPage", () => {
     const baseUrl = await screen.findByLabelText("接口地址");
     expect(baseUrl).toHaveValue("https://api.example.test/v1");
     fireEvent.change(screen.getByLabelText("变更理由"), { target: { value: "切换到新的模型供应商" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交审批申请" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并生效" }));
 
     await waitFor(() => expect(requests.some((request) =>
       request.method === "PUT" && request.url === "/api/v1/system-settings"
@@ -314,7 +314,7 @@ describe("OperationsPage", () => {
     // 预设只带模型名，不带价格：留空时必须拦下，否则会被 Number("") 静默当成 0。
     fireEvent.click(await screen.findByRole("button", { name: /DeepSeek/ }));
     fireEvent.change(screen.getByLabelText("变更理由"), { target: { value: "换供应商" } });
-    fireEvent.click(screen.getByRole("button", { name: "提交审批申请" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存并生效" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("单价不能为空");
     expect(requests.some((request) => request.method === "PUT")).toBe(false);

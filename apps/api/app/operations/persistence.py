@@ -123,9 +123,11 @@ class SystemSettingChangeRecord(AuthBase):
             "status IN ('PENDING','APPROVED','REJECTED','STALE')",
             name="ck_system_setting_change_status",
         ),
+        # 平台管理员保存即生效，申请人与生效人可以是同一人（approved_by 仍需非空）。
+        # 历史遗留的 PENDING 变更仍走二人审批，但不再由数据库强制。
         CheckConstraint(
-            "status <> 'APPROVED' OR (approved_by IS NOT NULL AND approved_by <> requested_by)",
-            name="ck_system_setting_change_approval_separation",
+            "status <> 'APPROVED' OR approved_by IS NOT NULL",
+            name="ck_system_setting_change_approval_present",
         ),
         CheckConstraint(
             "(status = 'PENDING' AND decided_at IS NULL) OR (status <> 'PENDING' AND decided_at IS NOT NULL)",

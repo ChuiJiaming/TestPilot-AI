@@ -173,6 +173,7 @@ class SystemSettingChangeView(BaseModel):
 class SystemSettingsPage(BaseModel):
     items: list[SystemSettingView]
     pending_changes: list[SystemSettingChangeView] = Field(default_factory=list)
+    recent_changes: list[SystemSettingChangeView] = Field(default_factory=list)
 
 
 class SystemSettingChangeRequest(BaseModel):

@@ -115,8 +115,15 @@ const emptyModelDraft: ModelDraft = {
   reason: "",
 };
 
+const changeStatusLabels: Record<string, string> = {
+  PENDING: "待审批",
+  APPROVED: "已生效",
+  REJECTED: "已拒绝",
+  STALE: "已过期",
+};
+
 const sourceLabels: Record<ModelConfigView["source"], string> = {
-  database: "数据库已批准设置",
+  database: "数据库设置（已生效）",
   environment: "环境变量",
   default: "内置默认值",
 };
@@ -184,6 +191,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [settingsNotice, setSettingsNotice] = useState("");
+  const [settingHistory, setSettingHistory] = useState<SettingChange[]>([]);
 
   const [modelConfig, setModelConfig] = useState<ModelConfigView | null>(null);
   const [modelConfigLoading, setModelConfigLoading] = useState(false);
@@ -197,9 +205,12 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   const [modelProbeBusy, setModelProbeBusy] = useState(false);
 
   const isOrganizationAdmin = organization?.role === "org_admin";
+  // 平台管理员保存即生效，模型页展示「待审批（历史遗留）+ 最近生效」两类记录。
   const modelChanges = useMemo(
-    () => settingChanges.filter((change) => change.key === "llm_config"),
-    [settingChanges],
+    () => [...settingChanges, ...settingHistory]
+      .filter((change) => change.key === "llm_config")
+      .slice(0, 5),
+    [settingChanges, settingHistory],
   );
   // 摘要卡按接口地址反推供应商，编辑器按同一地址回显选中的预设。
   const providerIdentity = useMemo(
@@ -224,11 +235,12 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
 
   useEffect(() => {
     let active = true;
-    api<{ items: Setting[]; pending_changes: SettingChange[] }>("/api/v1/system-settings", {}, accessToken)
+    api<{ items: Setting[]; pending_changes: SettingChange[]; recent_changes?: SettingChange[] }>("/api/v1/system-settings", {}, accessToken)
       .then((page) => {
         if (!active) return;
         setSettings(page.items ?? []);
         setSettingChanges(page.pending_changes ?? []);
+        setSettingHistory(page.recent_changes ?? []);
         setPlatformAccess("allowed");
       })
       .catch((error: unknown) => {
@@ -325,9 +337,10 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   async function loadSettings() {
     setSettingsError("");
     try {
-      const page = await api<{ items: Setting[]; pending_changes: SettingChange[] }>("/api/v1/system-settings", {}, accessToken);
+      const page = await api<{ items: Setting[]; pending_changes: SettingChange[]; recent_changes?: SettingChange[] }>("/api/v1/system-settings", {}, accessToken);
       setSettings(page.items ?? []);
       setSettingChanges(page.pending_changes ?? []);
+      setSettingHistory(page.recent_changes ?? []);
     } catch (error) {
       setSettingsError(errorMessage(error));
     }
@@ -470,7 +483,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
         method: "PUT", body: JSON.stringify({ key: settingKey, value, reason: settingReason }),
       }, accessToken);
       setSettingReason("");
-      setSettingsNotice("变更申请已提交，等待另一位平台管理员审批。");
+      setSettingsNotice("设置已保存并立即生效。");
       await loadSettings();
     } catch (error) {
       setSettingsError(errorMessage(error));
@@ -613,7 +626,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
         }),
       }, accessToken);
       setShowModelForm(false);
-      setModelConfigNotice("模型配置变更已提交，需另一位平台管理员在「平台设置」批准后生效。");
+      setModelConfigNotice("模型配置已保存并立即生效，worker 下次调用即采用新配置。");
       await Promise.all([loadModelConfig(), loadSettings()]);
     } catch (error) {
       setModelFormError(errorMessage(error));
@@ -791,9 +804,9 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           </div>}
         </Card>
                 {modelChanges.length > 0 && <Card className="operations-card">
-          <div className="operations-card-heading"><div><CardTitle>模型配置变更</CardTitle><p>配置在另一位平台管理员批准后才会被 worker 采用。</p></div><span className="operations-count">{modelChanges.length}</span></div>
+          <div className="operations-card-heading"><div><CardTitle>模型配置变更记录</CardTitle><p>平台管理员保存后立即生效，以下为最近 5 条变更留痕。</p></div><span className="operations-count">{modelChanges.length}</span></div>
           <div className="operations-change-list">{modelChanges.map((change) => <article className="operations-change-card" key={change.id}>
-            <div className="operations-change-title"><div><b>llm_config</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
+            <div className="operations-change-title"><div><b>llm_config</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{changeStatusLabels[change.status] ?? change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
             <p>{change.reason}</p>
             <div className="operations-actors"><span>申请人 <b>{change.requested_by}</b></span><span>审批人 <b>{change.approved_by ?? "待审批"}</b></span></div>
             {change.status === "PENDING" && (change.requested_by === currentUserId
@@ -802,7 +815,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           </article>)}</div>
         </Card>}
       </>}
-      {showModelForm && <Modal title="编辑 AI 模型配置" description="选择供应商预设会自动填好接口地址与模型名；保存后需另一位平台管理员审批。" wide onClose={() => setShowModelForm(false)}>
+      {showModelForm && <Modal title="编辑 AI 模型配置" description="选择供应商预设会自动填好接口地址与模型名；保存后立即生效。" wide onClose={() => setShowModelForm(false)}>
         <form className="form-stack" onSubmit={(event) => void saveModelConfig(event)}>
           {modelFormError && <div className="alert alert-error" role="alert">{modelFormError}</div>}
           <div className="model-picker">
@@ -841,14 +854,14 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
             <Button variant="secondary" type="button" onClick={() => setModelDraft((current) => ({ ...current, pricing: [...current.pricing, { model: "", input: "", output: "" }] }))}><Plus size={14} />新增模型定价</Button>
           </fieldset>
           <div><Label htmlFor="model-change-reason">变更理由</Label><Input id="model-change-reason" value={modelDraft.reason} onChange={(event) => setModelDraft((current) => ({ ...current, reason: event.target.value }))} maxLength={500} required /></div>
-          <Button type="submit" disabled={modelBusy}>{modelBusy ? "正在提交…" : "提交审批申请"}</Button>
+          <Button type="submit" disabled={modelBusy}>{modelBusy ? "正在保存…" : "保存并生效"}</Button>
         </form>
       </Modal>}
 
     </section>}
 
     {tab === "settings" && platformAccess === "allowed" && <section id="operations-panel-settings" role="tabpanel" aria-labelledby="operations-tab-settings" className="operations-panel">
-      <div className="operations-section-heading"><div><h2>平台设置审批</h2><p>设置变更由另一位平台管理员审批；页面只展示旧值和新值的哈希摘要。</p></div><Button variant="secondary" type="button" onClick={() => void loadSettings()} disabled={settingsBusy}><RefreshCw size={14} />刷新</Button></div>
+      <div className="operations-section-heading"><div><h2>平台设置</h2><p>平台管理员保存后立即生效；页面只展示旧值和新值的哈希摘要，变更留痕在审计日志中。</p></div><Button variant="secondary" type="button" onClick={() => void loadSettings()} disabled={settingsBusy}><RefreshCw size={14} />刷新</Button></div>
       {settingsError && <div className="alert alert-error" role="alert">{settingsError}</div>}
       {settingsNotice && <div className="alert alert-success" role="status">{settingsNotice}</div>}
       <Card className="operations-card"><div className="operations-card-heading"><div><CardTitle>申请系统设置变更</CardTitle><p>仅允许非敏感的布尔值和整数设置；设置值不会从 API 回传。</p></div></div>
@@ -858,18 +871,18 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           </select></div>
           <div><Label htmlFor="setting-value">申请值</Label>{settingKey === "maintenance_mode" ? <select id="setting-value" className="input" value={settingValue} onChange={(event) => setSettingValue(event.target.value)}><option value="true">开启</option><option value="false">关闭</option></select> : <Input id="setting-value" type="number" step={1} value={settingValue} onChange={(event) => setSettingValue(event.target.value)} required />}</div>
           <div className="operations-form-wide"><Label htmlFor="setting-request-reason">申请理由</Label><Input id="setting-request-reason" value={settingReason} onChange={(event) => setSettingReason(event.target.value)} maxLength={500} required /></div>
-          <Button type="submit" disabled={settingsBusy}>{settingsBusy ? "正在提交…" : "提交审批申请"}</Button>
+          <Button type="submit" disabled={settingsBusy}>{settingsBusy ? "正在保存…" : "保存并生效"}</Button>
         </form>
       </Card>
       <Card className="operations-card"><div className="operations-card-heading"><div><CardTitle>当前设置摘要</CardTitle><p>用于检查设置版本，不包含原始设置值。</p></div><span className="operations-count">{settings.length}</span></div>
         {settings.length === 0 ? <p className="operations-empty-inline">尚无已保存的平台设置。</p> : <div className="operations-setting-list">{settings.map((setting) => <div className="operations-setting-row" key={setting.key}><b>{setting.key}</b><code>{setting.value_hash}</code><small>{formatDate(setting.updated_at)}</small></div>)}</div>}
       </Card>
-      <Card className="operations-card"><div className="operations-card-heading"><div><CardTitle>待审批变更</CardTitle><p>审批人、申请理由和两侧哈希均可审计。</p></div><span className="operations-count">{settingChanges.filter((item) => item.status === "PENDING").length}</span></div>
-        {settingChanges.length === 0 ? <p className="operations-empty-inline">当前没有待审批设置变更。</p> : <div className="operations-change-list">{settingChanges.map((change) => {
+      <Card className="operations-card"><div className="operations-card-heading"><div><CardTitle>待审批变更</CardTitle><p>平台管理员保存即生效，这里只保留改造前遗留的待审批项。</p></div><span className="operations-count">{settingChanges.filter((item) => item.status === "PENDING").length}</span></div>
+        {settingChanges.length === 0 ? <p className="operations-empty-inline">当前没有待审批设置变更（平台管理员保存即生效）。</p> : <div className="operations-change-list">{settingChanges.map((change) => {
           const isRequester = change.requested_by === currentUserId;
           const pending = change.status === "PENDING";
           return <article className="operations-change-card" key={change.id}>
-            <div className="operations-change-title"><div><b>{change.key}</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
+            <div className="operations-change-title"><div><b>{change.key}</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{changeStatusLabels[change.status] ?? change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
             <p>{change.reason}</p>
             <dl className="operations-hash-pair"><div><dt>原值哈希</dt><dd>{change.previous_value_hash}</dd></div><div><dt>新值哈希</dt><dd>{change.proposed_value_hash}</dd></div></dl>
             <div className="operations-actors"><span>申请人 <b>{change.requested_by}</b></span><span>审批人 <b>{change.approved_by ?? "待审批"}</b></span></div>
