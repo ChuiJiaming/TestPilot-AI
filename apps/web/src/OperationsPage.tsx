@@ -163,8 +163,8 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     api<{ items: Setting[]; pending_changes: SettingChange[] }>("/api/v1/system-settings", {}, accessToken)
       .then((page) => {
         if (!active) return;
-        setSettings(page.items);
-        setSettingChanges(page.pending_changes);
+        setSettings(page.items ?? []);
+        setSettingChanges(page.pending_changes ?? []);
         setPlatformAccess("allowed");
       })
       .catch((error: unknown) => {
@@ -261,8 +261,8 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     setSettingsError("");
     try {
       const page = await api<{ items: Setting[]; pending_changes: SettingChange[] }>("/api/v1/system-settings", {}, accessToken);
-      setSettings(page.items);
-      setSettingChanges(page.pending_changes);
+      setSettings(page.items ?? []);
+      setSettingChanges(page.pending_changes ?? []);
     } catch (error) {
       setSettingsError(errorMessage(error));
     }

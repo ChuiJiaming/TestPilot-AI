@@ -109,6 +109,18 @@ createServer((req, res) => {
     req.on("close", () => clearInterval(timer));
     return;
   }
+  // 平台设置（OperationsPage 依赖 pending_changes 字段）
+  if (p === "/api/v1/system-settings" && req.method === "GET") return json(res, 200, {
+    items: [
+      { key: "maintenance_mode", value_hash: "sha256:3f7c1a92e4b8d056", updated_at: "2026-10-28T09:12:00Z" },
+      { key: "max_runs_per_day", value_hash: "sha256:ab41d0f6c9237e18", updated_at: "2026-11-01T15:40:00Z" },
+    ],
+    pending_changes: [
+      { id: "chg-9001", key: "maintenance_mode", status: "PENDING", previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:3f7c1a92e4b8d056", requested_by: "崔海东", approved_by: null, reason: "发布窗口期暂停外部流量", created_at: "2026-11-04T08:30:00Z", decided_at: null },
+    ],
+  });
+  if (p === "/api/v1/system-settings" && req.method === "PUT") return json(res, 200, { id: "chg-" + Date.now(), key: "maintenance_mode", status: "PENDING", previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:6b52e7d1a9f480c3", requested_by: "崔海东", approved_by: null, reason: "演示申请", created_at: new Date().toISOString(), decided_at: null });
+  if (/^\/api\/v1\/admin\/system-setting-changes\/[^/]+\/decision$/.test(p)) { let body = ""; req.on("data", (c) => { body += c; }); req.on("end", () => { let decision = "APPROVED"; try { decision = JSON.parse(body).decision === "reject" ? "REJECTED" : "APPROVED"; } catch {} return json(res, 200, { id: "chg-9001", key: "maintenance_mode", status: decision, previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:3f7c1a92e4b8d056", requested_by: "崔海东", approved_by: "崔海东", reason: "发布窗口期暂停外部流量", created_at: "2026-11-04T08:30:00Z", decided_at: new Date().toISOString() }); }); return; }
   // 兜底：其余列表接口返回空集，保证页面可渲染
   if (req.method === "GET" && p.startsWith("/api/v1/")) {
     if (/approvals|healing|notifications|dead|usage|audit|quotas|preferences|settings|integrations|deliveries|visual/.test(p)) return json(res, 200, { items: [], next_cursor: null });

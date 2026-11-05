@@ -138,6 +138,17 @@ createServer((req, res) => {
   }
   if (/\/api\/v1\/organizations\/[^/]+\/quotas$/.test(p)) return json(res, 200, { monthly_token_limit: 2000000, monthly_tokens_committed: 743820, monthly_tokens_reserved: 120000, monthly_tokens_remaining: 1136180, period_month: "2026-11", max_concurrent_runs: 4, quota_exhausted: false });
   if (/\/api\/v1\/organizations\/[^/]+\/usage$/.test(p)) return json(res, 200, { items: [ { metric_name: "模型调用次数", value: 1284, unit: "次" }, { metric_name: "输入 tokens", value: 512600, unit: "tokens" }, { metric_name: "输出 tokens", value: 231220, unit: "tokens" }, { metric_name: "浏览器执行时长", value: 96, unit: "分钟" } ] });
+  if (p === "/api/v1/system-settings" && req.method === "GET") return json(res, 200, {
+    items: [
+      { key: "maintenance_mode", value_hash: "sha256:3f7c1a92e4b8d056", updated_at: "2026-10-28T09:12:00Z" },
+      { key: "max_runs_per_day", value_hash: "sha256:ab41d0f6c9237e18", updated_at: "2026-11-01T15:40:00Z" },
+    ],
+    pending_changes: [
+      { id: "chg-9001", key: "maintenance_mode", status: "PENDING", previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:3f7c1a92e4b8d056", requested_by: "崔海东", approved_by: null, reason: "发布窗口期暂停外部流量", created_at: "2026-11-04T08:30:00Z", decided_at: null },
+    ],
+  });
+  if (p === "/api/v1/system-settings" && req.method === "PUT") return json(res, 200, { id: "chg-" + Date.now(), key: "maintenance_mode", status: "PENDING", previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:6b52e7d1a9f480c3", requested_by: "崔海东", approved_by: null, reason: "演示申请", created_at: new Date().toISOString(), decided_at: null });
+  if (/^\/api\/v1\/admin\/system-setting-changes\/[^/]+\/decision$/.test(p)) { let body = ""; req.on("data", (c) => { body += c; }); req.on("end", () => { let decision = "APPROVED"; try { decision = JSON.parse(body).decision === "reject" ? "REJECTED" : "APPROVED"; } catch {} return json(res, 200, { id: "chg-9001", key: "maintenance_mode", status: decision, previous_value_hash: "sha256:0a11c4d2e8b7f609", proposed_value_hash: "sha256:3f7c1a92e4b8d056", requested_by: "崔海东", approved_by: "崔海东", reason: "发布窗口期暂停外部流量", created_at: "2026-11-04T08:30:00Z", decided_at: new Date().toISOString() }); }); return; }
   if (req.method === "GET" && p.startsWith("/api/v1/")) return json(res, 200, { items: [], next_cursor: null });
   return json(res, 404, { detail: "demo: not implemented" });
 }).listen(PORT, HOST, () => console.log(`Sureshot demo listening on http://${HOST}:${PORT}`));
