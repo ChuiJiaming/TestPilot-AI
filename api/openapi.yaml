@@ -8844,6 +8844,110 @@ paths:
       parameters: []
       x-required-roles: []
       x-auth-policy: INTERNAL_READY_HEALTH_ENDPOINT_OR_PUBLIC_MINIMAL
+  /api/v1/health/live:
+    get:
+      operationId: get_api_v1_health_live
+      summary: Liveness probe
+      description: Reports process liveness only. It never probes PostgreSQL, Redis or object storage, so a dependency outage cannot trigger a restart loop.
+      parameters: []
+      x-required-roles: []
+      x-auth-policy: PUBLIC_LIVENESS_ENDPOINT
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [alive]
+  /api/v1/auth/password-reset/request:
+    post:
+      operationId: post__api_v1_auth_password_reset_request
+      summary: Request a password reset link
+      description: Returns 202 with an identical body for known and unknown addresses. A reset link is only sent when the address belongs to an active account.
+      parameters: []
+      x-required-roles: []
+      x-auth-policy: PUBLIC_PASSWORD_RESET_REQUEST
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, message]
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+                  message:
+                    type: string
+        '422':
+          description: Validation failed
+        '429':
+          description: Rate limited
+        '503':
+          description: Password reset delivery is not configured
+  /api/v1/auth/password-reset/confirm:
+    post:
+      operationId: post__api_v1_auth_password_reset_confirm
+      summary: Complete a password reset
+      description: Rotates the password and revokes every session and refresh token for the account in the same transaction. Tokens are single-use.
+      parameters: []
+      x-required-roles: []
+      x-auth-policy: PUBLIC_PASSWORD_RESET_CONFIRM
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                  minLength: 32
+                  maxLength: 256
+                new_password:
+                  type: string
+                  minLength: 12
+                  maxLength: 128
+      responses:
+        '200':
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [reset]
+        '400':
+          description: Reset token is invalid, expired, or already used
+        '422':
+          description: Validation failed
+        '503':
+          description: Password reset is not configured
   /api/v1/projects/{project_id}/members/{user_id}:
     delete:
       operationId: delete_api_v1_projects_project_id_members_user_id

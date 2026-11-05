@@ -40,6 +40,7 @@ class EmailVerificationRecord(AuthBase):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False, default="VERIFY")
 
 
 class VerificationEmailOutboxRecord(AuthBase):
@@ -63,6 +64,7 @@ class VerificationEmailOutboxRecord(AuthBase):
     last_error: Mapped[str | None] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    purpose: Mapped[str] = mapped_column(String, nullable=False, default="VERIFY")
 
 
 class UserSessionRecord(AuthBase):
@@ -176,6 +178,7 @@ class SqlAlchemyVerificationRepository:
                     "token_ciphertext": row.token_ciphertext,
                     "expires_at": row.expires_at,
                     "attempts": row.attempts,
+                    "purpose": row.purpose,
                 })
             return claimed
 
@@ -291,6 +294,82 @@ class SqlAlchemyVerificationRepository:
                 update(VerificationEmailOutboxRecord)
                 .where(
                     VerificationEmailOutboxRecord.verification_id == verification.id,
+                    VerificationEmailOutboxRecord.status.in_(("PENDING", "RETRY", "PROCESSING")),
+                )
+                .values(status="CANCELLED", token_ciphertext="", lease_owner=None, lease_until=None)
+            )
+            return True
+
+    def issue_password_reset(self, email, token_hash, token_ciphertext, expires_at, now):
+        """Issue a reset token for an active account. Unknown emails return False.
+
+        The caller must return the same generic response either way; the boolean
+        exists only so the service can skip enqueuing mail for unknown accounts.
+        """
+        with self.session_factory.begin() as session:
+            user = session.scalar(
+                select(UserRecord).where(UserRecord.email == email).with_for_update()
+            )
+            if user is None or user.status != "active":
+                return False
+            self._replace_token(
+                session, user.id, user.email, token_hash, token_ciphertext,
+                expires_at, now, purpose="RESET",
+            )
+            return True
+
+    def consume_password_reset(self, token_hash, password_hash, now):
+        """Rotate the password and revoke every existing session for that user.
+
+        Revocation is part of the same transaction on purpose: a reset that
+        leaves an attacker's stolen refresh token alive is not a reset.
+        """
+        with self.session_factory.begin() as session:
+            reset = session.scalar(
+                select(EmailVerificationRecord)
+                .where(
+                    EmailVerificationRecord.token_hash == token_hash,
+                    EmailVerificationRecord.purpose == "RESET",
+                )
+                .with_for_update()
+            )
+            if (
+                reset is None
+                or reset.consumed_at is not None
+                or self._as_utc(reset.expires_at) <= self._as_utc(now)
+            ):
+                return False
+            user = session.scalar(
+                select(UserRecord).where(UserRecord.id == reset.user_id).with_for_update()
+            )
+            if user is None or user.status != "active":
+                return False
+            session.execute(
+                update(UserRecord)
+                .where(UserRecord.id == user.id)
+                .values(password_hash=password_hash, email_verified_at=user.email_verified_at or now)
+            )
+            reset.consumed_at = now
+            session.execute(
+                update(RefreshTokenRecord)
+                .where(
+                    RefreshTokenRecord.user_id == user.id,
+                    RefreshTokenRecord.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            session.execute(
+                update(UserSessionRecord)
+                .where(
+                    UserSessionRecord.user_id == user.id,
+                    UserSessionRecord.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            session.execute(
+                update(VerificationEmailOutboxRecord)
+                .where(
+                    VerificationEmailOutboxRecord.verification_id == reset.id,
                     VerificationEmailOutboxRecord.status.in_(("PENDING", "RETRY", "PROCESSING")),
                 )
                 .values(status="CANCELLED", token_ciphertext="", lease_owner=None, lease_until=None)
@@ -530,11 +609,15 @@ class SqlAlchemyVerificationRepository:
         }
 
     @staticmethod
-    def _replace_token(session: Session, user_id, email, token_hash, token_ciphertext, expires_at, now):
+    def _replace_token(session: Session, user_id, email, token_hash, token_ciphertext, expires_at, now,
+                       purpose="VERIFY"):
+        # Only same-purpose tokens are superseded: requesting a password reset
+        # must not silently invalidate an in-flight email verification.
         session.execute(
             update(EmailVerificationRecord)
             .where(
                 EmailVerificationRecord.user_id == user_id,
+                EmailVerificationRecord.purpose == purpose,
                 EmailVerificationRecord.consumed_at.is_(None),
             )
             .values(consumed_at=now)
@@ -543,6 +626,7 @@ class SqlAlchemyVerificationRepository:
             update(VerificationEmailOutboxRecord)
             .where(
                 VerificationEmailOutboxRecord.user_id == user_id,
+                VerificationEmailOutboxRecord.purpose == purpose,
                     VerificationEmailOutboxRecord.status.in_(("PENDING", "RETRY", "PROCESSING")),
             )
             .values(status="CANCELLED", token_ciphertext="", lease_owner=None, lease_until=None)
@@ -554,6 +638,7 @@ class SqlAlchemyVerificationRepository:
                 expires_at=expires_at,
                 consumed_at=None,
                 created_at=now,
+                purpose=purpose,
             )
         session.add(verification)
         session.flush()
@@ -562,6 +647,7 @@ class SqlAlchemyVerificationRepository:
             recipient_email=email, token_ciphertext=token_ciphertext, expires_at=expires_at,
             status="PENDING", attempts=0, available_at=now,
             lease_owner=None, lease_until=None, last_error=None, created_at=now, sent_at=None,
+            purpose=purpose,
         ))
 
     @staticmethod

@@ -8,7 +8,8 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 
 class SmtpVerificationMailer:
-    def __init__(self, *, host, port, username, password, sender, verify_url, starttls=True):
+    def __init__(self, *, host, port, username, password, sender, verify_url, starttls=True,
+                 reset_url=None):
         if not all((host, port, sender, verify_url)):
             raise ValueError("SMTP host, port, sender and verify_url are required")
         self.host = host
@@ -17,6 +18,9 @@ class SmtpVerificationMailer:
         self.password = password
         self.sender = sender
         self.verify_url = validate_verification_url(verify_url)
+        # Reset links fall back to the verification URL host only when explicitly
+        # configured; guessing a path would send users to a dead page.
+        self.reset_url = validate_verification_url(reset_url) if reset_url else None
         self.starttls = starttls
 
     def send_verification(self, email, token, expires_at):
@@ -29,6 +33,25 @@ class SmtpVerificationMailer:
             f"Verification link: {self.verify_url}?token={token}\n"
             f"Expires at: {expires_at.isoformat()}"
         )
+        self._send(message)
+
+    def send_password_reset(self, email, token, expires_at):
+        if not self.reset_url:
+            raise ValueError("TESTPILOT_PASSWORD_RESET_URL is not configured")
+        message = EmailMessage()
+        message["Subject"] = "Reset your TestPilot AI password"
+        message["From"] = self.sender
+        message["To"] = email
+        message.set_content(
+            "A password reset was requested for this address.\n"
+            f"Reset link: {self.reset_url}?token={token}\n"
+            f"Expires at: {expires_at.isoformat()}\n"
+            "If you did not request this, ignore this message: nothing changes "
+            "until the link above is used."
+        )
+        self._send(message)
+
+    def _send(self, message):
         with smtplib.SMTP(self.host, self.port, timeout=10) as client:
             if self.starttls:
                 client.starttls()

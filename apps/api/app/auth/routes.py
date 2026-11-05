@@ -9,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.api.app.auth.verification import EmailVerificationService, RegistrationAccepted
+from apps.api.app.auth.password_reset import PasswordResetService, ResetAccepted
 from apps.api.app.auth.sessions import AuthSessionService
 from apps.api.app.core.errors import ProblemDetails
 
@@ -39,6 +40,24 @@ class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
     password: str = Field(min_length=1, max_length=128)
     device_label: str | None = Field(default=None, max_length=80)
+
+
+class PasswordResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=254, pattern=r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+class PasswordResetConfirm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(min_length=32, max_length=256)
+    # Same floor as registration: a reset must not be a way to weaken a password.
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+class PasswordResetResult(BaseModel):
+    status: str
 
 
 class AuthUser(BaseModel):
@@ -105,6 +124,7 @@ def create_auth_router(
     password_hash: PasswordHash | None,
     auth_sessions: AuthSessionService | None = None,
     allowed_origins: Sequence[str] = (),
+    password_reset: PasswordResetService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/auth", tags=["Auth & Orgs"])
     bearer_scheme = HTTPBearer(scheme_name="BearerAuth", auto_error=False)
@@ -118,6 +138,11 @@ def create_auth_router(
         if auth_sessions is None:
             raise HTTPException(status_code=503, detail="Authentication sessions are not configured")
         return auth_sessions
+
+    def configured_reset():
+        if password_reset is None or password_hash is None:
+            raise HTTPException(status_code=503, detail="Password reset is not configured")
+        return password_reset
 
     def require_origin(origin: str | None) -> None:
         if not origin or origin not in allowed_origins:
@@ -166,6 +191,35 @@ def create_auth_router(
             email=payload.email,
             client_ip=request.client.host if request.client else None,
         )
+
+    @router.post(
+        "/password-reset/request", status_code=202, response_model=ResetAccepted,
+        operation_id="post__api_v1_auth_password_reset_request",
+        responses={503: {"description": "Password reset delivery is not configured", "model": ProblemDetails}},
+    )
+    def request_password_reset(payload: PasswordResetRequest, request: Request):
+        # Always 202 with the same body: whether the address exists stays private.
+        return configured_reset().request(
+            email=payload.email,
+            client_ip=request.client.host if request.client else None,
+        )
+
+    @router.post(
+        "/password-reset/confirm", response_model=PasswordResetResult,
+        operation_id="post__api_v1_auth_password_reset_confirm",
+        responses={
+            400: {"description": "Reset token is invalid, expired, or already used"},
+            503: {"description": "Password reset is not configured", "model": ProblemDetails},
+        },
+    )
+    def confirm_password_reset(payload: PasswordResetConfirm):
+        accepted = configured_reset().confirm(
+            payload.token,
+            password_hash=lambda: password_hash(payload.new_password),
+        )
+        if not accepted:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        return PasswordResetResult(status="reset")
 
     @router.post(
         "/login", response_model=AuthResponse,

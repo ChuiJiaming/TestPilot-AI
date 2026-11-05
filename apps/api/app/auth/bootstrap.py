@@ -7,12 +7,14 @@ from urllib.parse import urlsplit
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from apps.api.app.core.db import build_engine
 from apps.api.app.auth.adapters import RedisVerificationRateLimiter, VerificationTokenCipher
 from apps.api.app.auth.passwords import ScryptPasswordHasher
 from apps.api.app.auth.persistence import SqlAlchemyVerificationRepository
 from apps.api.app.auth.sessions import AuthSessionService
 from apps.api.app.auth.lifecycle import LifecycleRepository
 from apps.api.app.auth.verification import EmailVerificationService
+from apps.api.app.auth.password_reset import PasswordResetService
 from apps.api.app.tenancy.persistence import OrganizationProjectRepository
 from apps.api.app.environments.persistence import EnvironmentRepository, EnvironmentSnapshotRepository
 from apps.api.app.cases.persistence import CaseRepository
@@ -35,6 +37,8 @@ class EmailVerificationSettings:
     smtp_username: str | None = None
     smtp_password: str | None = None
     smtp_starttls: bool = True
+    password_reset_url: str | None = None
+    password_reset_ttl_seconds: int = 3600
 
     def __post_init__(self):
         if self.token_ttl_seconds <= 0:
@@ -56,6 +60,7 @@ class EmailVerificationSettings:
 @dataclass(frozen=True)
 class AuthComponents:
     service: EmailVerificationService
+    password_reset: PasswordResetService
     sessions: AuthSessionService
     password_hasher: ScryptPasswordHasher
     engine: object
@@ -108,11 +113,15 @@ def settings_from_environment() -> EmailVerificationSettings | None:
         smtp_username=os.getenv("TESTPILOT_SMTP_USERNAME"),
         smtp_password=os.getenv("TESTPILOT_SMTP_PASSWORD"),
         smtp_starttls=starttls == "true",
+        password_reset_url=os.getenv("TESTPILOT_PASSWORD_RESET_URL") or None,
+        password_reset_ttl_seconds=int(
+            os.getenv("TESTPILOT_PASSWORD_RESET_TTL_SECONDS", "3600")
+        ),
     )
 
 
 def build_auth_components(*, settings: EmailVerificationSettings, redis_client) -> AuthComponents:
-    engine = create_engine(settings.database_url, pool_pre_ping=True)
+    engine = build_engine(settings.database_url)
     sessions = sessionmaker(engine, expire_on_commit=False)
     repository = SqlAlchemyVerificationRepository(sessions)
     tenancy_repository = OrganizationProjectRepository(sessions)
@@ -133,6 +142,12 @@ def build_auth_components(*, settings: EmailVerificationSettings, redis_client) 
         limiter=limiter,
         token_ttl_seconds=settings.token_ttl_seconds,
     )
+    password_reset = PasswordResetService(
+        repository=repository,
+        token_encryptor=VerificationTokenCipher(settings.email_outbox_encryption_keys),
+        limiter=limiter,
+        token_ttl_seconds=settings.password_reset_ttl_seconds,
+    )
     password_hasher = ScryptPasswordHasher()
     auth_sessions = AuthSessionService(
         repository=repository,
@@ -144,6 +159,7 @@ def build_auth_components(*, settings: EmailVerificationSettings, redis_client) 
     )
     return AuthComponents(
         service=service,
+        password_reset=password_reset,
         sessions=auth_sessions,
         password_hasher=password_hasher,
         engine=engine,

@@ -15,10 +15,17 @@ class MigrationRunnerTests(unittest.TestCase):
         migrations = repository_migrations(
             Path(__file__).resolve().parents[1] / "db" / "migrations"
         )
-        self.assertEqual(len(migrations), 18)
+        names = [path.name for path in migrations]
         self.assertEqual(migrations[0].name, "001_schema.sql")
-        self.assertEqual(migrations[-1].name, "018_m15_operations.sql")
-        self.assertNotIn("005_preflight_and_validate.sql", {path.name for path in migrations})
+        # Ordered, gap-free, and every applied migration is discoverable. The
+        # count is intentionally not pinned: pinning it turns every new
+        # migration into a failing test that says nothing about correctness.
+        self.assertEqual(names, sorted(names))
+        self.assertEqual(names, [f"{index:03d}_" + name.split("_", 1)[1]
+                                  for index, name in enumerate(names, start=1)])
+        self.assertIn("018_m15_operations.sql", names)
+        self.assertIn("019_password_reset.sql", names)
+        self.assertNotIn("005_preflight_and_validate.sql", set(names))
 
     def test_m13_migration_adds_export_idempotency_and_lease_invariants(self):
         migration = (

@@ -35,8 +35,11 @@ class M15OperationsMigrationTests(unittest.TestCase):
 
     def test_migration_runner_discovers_candidate_018_without_editing_history(self):
         migrations = repository_migrations(ROOT / "db" / "migrations")
-        self.assertEqual(len(migrations), 18)
-        self.assertEqual(migrations[-1].name, "018_m15_operations.sql")
+        names = [path.name for path in migrations]
+        # 018 must stay discoverable in order; later migrations are appended, so
+        # asserting "018 is last" would fail for reasons unrelated to M15.
+        self.assertIn("018_m15_operations.sql", names)
+        self.assertLess(names.index("017_m13_report_exports.sql"), names.index("018_m15_operations.sql"))
         self.assertEqual(MIGRATION.name, "018_m15_operations.sql")
 
 

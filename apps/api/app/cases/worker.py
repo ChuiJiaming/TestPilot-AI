@@ -21,6 +21,8 @@ from apps.api.app import orm_models
 
 orm_models.load_all_models()
 
+from apps.api.app.core.db import build_engine
+
 from apps.api.app.cases.planning import (
     GenerationRepository,
     OutboxRecord,
@@ -110,7 +112,7 @@ def session_factory():
     database_url = os.getenv("TESTPILOT_DATABASE_URL")
     if not database_url:
         raise RuntimeError("Set TESTPILOT_DATABASE_URL for the Agent Worker")
-    engine = create_engine(database_url, pool_pre_ping=True)
+    engine = build_engine(database_url)
     return sessionmaker(engine, expire_on_commit=False)
 
 
@@ -583,6 +585,7 @@ def dispatch_verification_email_outbox():
         password=os.getenv("TESTPILOT_SMTP_PASSWORD"),
         sender=os.environ["TESTPILOT_SMTP_SENDER"],
         verify_url=os.environ["TESTPILOT_EMAIL_VERIFY_URL"],
+        reset_url=os.getenv("TESTPILOT_PASSWORD_RESET_URL") or None,
         starttls=os.getenv("TESTPILOT_SMTP_STARTTLS", "true").casefold() == "true",
     )
     repository = SqlAlchemyVerificationRepository(session_factory())
@@ -593,7 +596,10 @@ def dispatch_verification_email_outbox():
     for message in messages:
         try:
             token = cipher.decrypt(message["token_ciphertext"])
-            mailer.send_verification(message["recipient_email"], token, message["expires_at"])
+            if message.get("purpose") == "RESET":
+                mailer.send_password_reset(message["recipient_email"], token, message["expires_at"])
+            else:
+                mailer.send_verification(message["recipient_email"], token, message["expires_at"])
             sent += int(repository.mark_verification_email_sent(
                 message["id"], worker_id=worker_id, now=datetime.now(timezone.utc)))
         except Exception as exc:
