@@ -45,6 +45,7 @@ from apps.api.app.integrations.secrets import SecretRefResolver
 from apps.api.app.operations.notifications import NotificationService
 from apps.api.app.operations.routes import create_operations_router
 from apps.api.app.operations.audit import AuditRepository
+from apps.api.app.operations.model_config import ModelConfigService
 from apps.api.app.operations.quotas import QuotaPolicyService
 from apps.api.app.operations.settings import SystemSettingService
 
@@ -76,6 +77,7 @@ def create_app(
     audit_repository: AuditRepository | None = None,
     quota_policy_service: QuotaPolicyService | None = None,
     system_setting_service: SystemSettingService | None = None,
+    model_config_service: ModelConfigService | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="TestPilot AI API",
@@ -116,6 +118,9 @@ def create_app(
     app.include_router(create_planning_router(
         planning=planning_repository, generations=generation_repository,
         auth_sessions=auth_sessions,
+        model_catalog=(
+            model_config_service.options if model_config_service is not None else None
+        ),
     ))
     app.include_router(create_run_router(
         repository=run_repository, case_repository=case_repository,
@@ -139,6 +144,7 @@ def create_app(
         audit_repository=audit_repository,
         quota_policy_service=quota_policy_service,
         system_setting_service=system_setting_service,
+        model_config_service=model_config_service,
     ))
     app.state.readiness_probes = dict(readiness_probes or {})
     app.state.expected_readiness_dependencies = (
@@ -235,6 +241,9 @@ def create_default_app() -> FastAPI:
             components.environment_snapshots.session_factory,
         ),
         system_setting_service=SystemSettingService(
+            components.environment_snapshots.session_factory,
+        ),
+        model_config_service=ModelConfigService(
             components.environment_snapshots.session_factory,
         ),
     )

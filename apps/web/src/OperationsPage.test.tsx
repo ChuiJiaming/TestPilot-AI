@@ -24,8 +24,25 @@ type RequestRecord = {
   url: string; method: string; headers: Headers; body?: Record<string, unknown>;
 };
 
+const modelConfig = {
+  source: "database" as const,
+  base_url: "https://api.example.test/v1",
+  api_key_env: "TESTPILOT_LLM_API_KEY",
+  api_key_configured: true,
+  planner_model: "planner-large",
+  run_agent_model: "agent-small",
+  pricing: [
+    { model: "agent-small", input_usd_per_million: 0.15, output_usd_per_million: 0.6 },
+    { model: "planner-large", input_usd_per_million: 1.5, output_usd_per_million: 6 },
+  ],
+  ready: true,
+  issues: [] as { code: string; message: string }[],
+  updated_at: "2026-11-02T08:00:00Z",
+};
+
 function setupFetch(options: {
   platformAdmin?: boolean; decisionStatus?: number; decisionDetail?: string;
+  modelIssues?: { code: string; message: string }[];
 } = {}) {
   const requests: RequestRecord[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,6 +119,15 @@ function setupFetch(options: {
     }
     if (url === "/api/v1/system-settings" && method === "PUT") {
       return Response.json({ ...pendingChange, key: body?.key, status: "PENDING" });
+    }
+    if (url.endsWith("/api/v1/admin/model-config") && method === "GET") {
+      if (!options.platformAdmin) return Response.json({ detail: "Platform administrator access required" }, { status: 403 });
+      return Response.json({
+        ...modelConfig, issues: options.modelIssues ?? [], ready: (options.modelIssues ?? []).length === 0,
+      });
+    }
+    if (url.endsWith("/api/v1/admin/model-config/test") && method === "POST") {
+      return Response.json({ ok: true, model: "agent-small", latency_ms: 88, error_code: "", message: "连接成功。" });
     }
     if (url.endsWith("/admin/system-setting-changes/change-1/decision") && method === "POST") {
       if (options.decisionStatus) {
@@ -209,6 +235,62 @@ describe("OperationsPage", () => {
     fireEvent.click(await screen.findByRole("button", { name: "批准变更" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Current setting changed; proposal is stale");
+  });
+
+  it("shows the effective model configuration and probes the provider", async () => {
+    const requests = setupFetch({ platformAdmin: true });
+    render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
+
+    expect(await screen.findByText("模型调用已就绪")).toBeInTheDocument();
+    expect(screen.getByText("数据库已批准设置", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText("planner-large").length).toBeGreaterThanOrEqual(2);
+    fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
+
+    expect(await screen.findByText(/连接成功 · agent-small · 88ms/)).toBeInTheDocument();
+    expect(requests.some((request) =>
+      request.method === "POST" && request.url.endsWith("/admin/model-config/test"),
+    )).toBe(true);
+  });
+
+  it("lists blocking model issues instead of claiming readiness", async () => {
+    setupFetch({ platformAdmin: true, modelIssues: [
+      { code: "API_KEY_MISSING", message: "环境变量 TESTPILOT_LLM_API_KEY 未设置，模型调用会被拒绝。" },
+    ] });
+    render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
+
+    expect(await screen.findByText("模型调用尚未就绪")).toBeInTheDocument();
+    expect(screen.getByText("API_KEY_MISSING")).toBeInTheDocument();
+  });
+
+  it("submits a model configuration change with pricing for approval", async () => {
+    const requests = setupFetch({ platformAdmin: true });
+    render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑配置" }));
+
+    const baseUrl = await screen.findByLabelText("接口地址");
+    expect(baseUrl).toHaveValue("https://api.example.test/v1");
+    fireEvent.change(screen.getByLabelText("变更理由"), { target: { value: "切换到新的模型供应商" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交审批申请" }));
+
+    await waitFor(() => expect(requests.some((request) =>
+      request.method === "PUT" && request.url === "/api/v1/system-settings"
+        && request.body?.key === "llm_config",
+    )).toBe(true));
+    const submitted = requests.find((request) =>
+      request.method === "PUT" && request.body?.key === "llm_config");
+    expect(submitted?.body?.value).toMatchObject({
+      base_url: "https://api.example.test/v1",
+      api_key_env: "TESTPILOT_LLM_API_KEY",
+      planner_model: "planner-large",
+      run_agent_model: "agent-small",
+      pricing: {
+        "agent-small": { input_usd_per_million: 0.15, output_usd_per_million: 0.6 },
+      },
+    });
+    expect(submitted?.body?.reason).toBe("切换到新的模型供应商");
   });
 
   it("shows a denied platform setting decision", async () => {

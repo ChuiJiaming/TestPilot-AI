@@ -21,6 +21,12 @@ class GenerationCreate(BaseModel):
     model_name: str
 
 
+class ModelOptionsPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[str] = Field(default_factory=list, max_length=50)
+    default: str = ""
+
+
 class SuiteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str
@@ -146,6 +152,7 @@ class DeadGenerationOutboxPage(BaseModel):
 def create_planning_router(
     *, planning: PlanningRepository | None, generations: GenerationRepository | None,
     auth_sessions: AuthSessionService | None,
+    model_catalog: Callable[[], dict] | None = None,
 ):
     router = APIRouter(prefix="/api/v1", tags=["Cases & Plans"])
     bearer = HTTPBearer(scheme_name="BearerAuth", auto_error=False)
@@ -440,5 +447,18 @@ def create_planning_router(
             raise HTTPException(status_code=403, detail="Platform administrator session required") from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="Invalid cursor") from exc
+
+    @router.get(
+        "/model-options",
+        operation_id="get__api_v1_model_options",
+        response_model=ModelOptionsPage,
+    )
+    def get_model_options(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        actor(credentials, permission="resource:read")
+        if model_catalog is None:
+            raise HTTPException(status_code=503, detail="Model catalog is not configured")
+        return model_catalog()
 
     return router

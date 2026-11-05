@@ -41,6 +41,7 @@ _SETTING_RULES = {
     "monthly_token_limit": (int, 0, 2**63 - 1),
     "provider_timeout_seconds": (int, 1, 3600),
     "notification_retry_limit": (int, 1, 8),
+    "llm_config": (dict, None, None),
 }
 
 
@@ -67,8 +68,22 @@ def _validate_setting(key: str, value) -> None:
     expected_type, minimum, maximum = _SETTING_RULES[key]
     if type(value) is not expected_type:
         raise SettingInvalid("setting value has the wrong type")
+    if key == "llm_config":
+        from apps.api.app.operations.model_config import ModelConfigError, parse_model_config
+
+        try:
+            parse_model_config(value)
+        except ModelConfigError as exc:
+            raise SettingInvalid(str(exc)) from exc
+        return
     if expected_type is int and not minimum <= value <= maximum:
         raise SettingInvalid("setting value is outside the supported range")
+
+
+def require_platform_admin(session, actor_id, *, lock=False) -> None:
+    user = session.get(UserRecord, actor_id, with_for_update=lock)
+    if user is None or user.platform_role != "platform_admin":
+        raise SettingForbidden("platform administrator access required")
 
 
 def _validate_reason(reason: str) -> str:
@@ -232,9 +247,7 @@ class SystemSettingService:
 
     @staticmethod
     def _require_platform_admin(session, actor_id, *, lock=False):
-        user = session.get(UserRecord, actor_id, with_for_update=lock)
-        if user is None or user.platform_role != "platform_admin":
-            raise SettingForbidden("platform administrator access required")
+        require_platform_admin(session, actor_id, lock=lock)
 
     @staticmethod
     def _change_dto(row: SystemSettingChangeRecord) -> dict:

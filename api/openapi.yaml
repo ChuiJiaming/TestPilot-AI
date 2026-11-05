@@ -8298,6 +8298,62 @@ paths:
       x-contract-status: V10.3_IMPLEMENTED
       x-tenant-scope: platform
       x-required-permissions: [platform:admin]
+  /api/v1/admin/model-config:
+    get:
+      tags: [Integrations & Operations]
+      summary: Read the effective non-secret model configuration and readiness issues
+      operationId: get__api_v1_admin_model_config
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Effective model configuration with its source and blocking issues
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelConfig'}
+        '401': {description: Authentication required}
+        '403': {description: Platform administrator permission denied}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [platform:admin]
+  /api/v1/admin/model-config/test:
+    post:
+      tags: [Integrations & Operations]
+      summary: Send one bounded chat completion to verify endpoint, key and model
+      operationId: post__api_v1_admin_model_config_test
+      security: [{BearerAuth: []}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ModelConfigProbeRequest'}
+      responses:
+        '200':
+          description: Probe result; transport and provider failures are reported, not raised
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelConfigProbe'}
+        '401': {description: Authentication required}
+        '403': {description: Platform administrator permission denied}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [platform:admin]
+  /api/v1/model-options:
+    get:
+      tags: [Cases & Plans]
+      summary: List configured model names for the scenario generation form
+      operationId: get__api_v1_model_options
+      security: [{BearerAuth: []}]
+      responses:
+        '200':
+          description: Model names and the default selection; no rates or endpoint
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ModelOptions'}
+        '401': {description: Authentication required}
+        '403': {description: API token scope denied}
+      x-contract-status: V10.3_IMPLEMENTED
+      x-tenant-scope: platform
+      x-required-permissions: [resource:read]
   /api/v1/api-tokens:
     get:
       tags:
@@ -13257,13 +13313,94 @@ components:
       properties:
         key:
           type: string
-          enum: [maintenance_mode, max_concurrent_runs, monthly_token_limit, provider_timeout_seconds, notification_retry_limit]
+          enum: [maintenance_mode, max_concurrent_runs, monthly_token_limit, provider_timeout_seconds, notification_retry_limit, llm_config]
         value:
           oneOf:
           - {type: boolean}
           - {type: integer, minimum: 0}
+          - {$ref: '#/components/schemas/ModelConfigInput'}
         reason: {type: string, minLength: 1, maxLength: 500}
       required: [key, value, reason]
+    ModelPricing:
+      type: object
+      additionalProperties: false
+      properties:
+        model: {type: string, minLength: 1, maxLength: 120}
+        input_usd_per_million: {type: number, minimum: 0}
+        output_usd_per_million: {type: number, minimum: 0}
+      required: [model, input_usd_per_million, output_usd_per_million]
+    ModelConfigIssue:
+      type: object
+      additionalProperties: false
+      properties:
+        code: {type: string}
+        message: {type: string}
+      required: [code, message]
+    ModelConfigInput:
+      type: object
+      additionalProperties: false
+      description: Non-secret model settings; the API key is referenced by environment variable name only.
+      properties:
+        base_url: {type: string, maxLength: 2048}
+        api_key_env: {type: string, pattern: '^[A-Z][A-Z0-9_]{2,64}$'}
+        planner_model: {type: string, maxLength: 120}
+        run_agent_model: {type: string, maxLength: 120}
+        pricing:
+          type: object
+          minProperties: 1
+          maxProperties: 50
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            properties:
+              input_usd_per_million: {type: number, minimum: 0}
+              output_usd_per_million: {type: number, minimum: 0}
+            required: [input_usd_per_million, output_usd_per_million]
+      required: [base_url, api_key_env, planner_model, run_agent_model, pricing]
+    ModelConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        source: {type: string, enum: [database, environment, default]}
+        base_url: {type: string}
+        api_key_env: {type: string}
+        api_key_configured: {type: boolean}
+        planner_model: {type: string}
+        run_agent_model: {type: string}
+        pricing:
+          type: array
+          items: {$ref: '#/components/schemas/ModelPricing'}
+        ready: {type: boolean}
+        issues:
+          type: array
+          items: {$ref: '#/components/schemas/ModelConfigIssue'}
+        updated_at: {type: string, format: date-time, nullable: true}
+      required: [source, base_url, api_key_env, api_key_configured, planner_model, run_agent_model, pricing, ready, issues]
+    ModelConfigProbeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        model: {type: string, maxLength: 120, nullable: true}
+    ModelConfigProbe:
+      type: object
+      additionalProperties: false
+      properties:
+        ok: {type: boolean}
+        model: {type: string}
+        latency_ms: {type: integer, minimum: 0}
+        error_code: {type: string}
+        message: {type: string}
+      required: [ok, model, latency_ms, error_code, message]
+    ModelOptions:
+      type: object
+      additionalProperties: false
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: {type: string}
+        default: {type: string}
+      required: [items, default]
     SystemSettingDecision:
       type: object
       additionalProperties: false

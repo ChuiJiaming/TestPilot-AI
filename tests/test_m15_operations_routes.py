@@ -168,3 +168,73 @@ def test_audit_and_quota_routes_pass_organization_scope_to_services():
     assert audit.calls[0][0:2] == (ACTOR_ID, ORGANIZATION_ID)
     assert audit.calls[0][2]["action"] == "run.failed"
     assert quota_result["organization_id"] == ORGANIZATION_ID
+
+
+class _ModelConfig:
+    def __init__(self):
+        self.probes = []
+
+    def view(self, actor_id):
+        return {
+            "source": "database", "base_url": "https://api.example.test/v1",
+            "api_key_env": "TESTPILOT_LLM_API_KEY", "api_key_configured": True,
+            "planner_model": "planner-large", "run_agent_model": "agent-small",
+            "pricing": [{"model": "agent-small", "input_usd_per_million": 0.15,
+                         "output_usd_per_million": 0.6}],
+            "ready": True, "issues": [], "updated_at": None,
+        }
+
+    def probe(self, actor_id, *, model=None):
+        self.probes.append((actor_id, model))
+        return {"ok": True, "model": model or "agent-small", "latency_ms": 42,
+                "error_code": "", "message": "连接成功。"}
+
+
+def _router_with_models(model_config=None):
+    return create_operations_router(
+        notification_service=object(), auth_sessions=_AuthSessions(),
+        audit_repository=_Audit(), quota_policy_service=_QuotaPolicy(),
+        system_setting_service=_Settings(),
+        model_config_service=model_config or _ModelConfig(),
+    )
+
+
+def test_model_config_route_requires_authentication():
+    route = _endpoint(_router_with_models(), "get__api_v1_admin_model_config")
+
+    with pytest.raises(HTTPException) as caught:
+        route.endpoint(credentials=None)
+
+    assert caught.value.status_code == 401
+
+
+def test_model_config_route_returns_the_effective_view():
+    route = _endpoint(_router_with_models(), "get__api_v1_admin_model_config")
+
+    view = route.endpoint(credentials=_credentials())
+
+    assert view["ready"] is True
+    assert view["api_key_configured"] is True
+    assert view["source"] == "database"
+
+
+def test_model_config_probe_route_forwards_the_requested_model():
+    models = _ModelConfig()
+    route = _endpoint(_router_with_models(models), "post__api_v1_admin_model_config_test")
+
+    result = route.endpoint(
+        payload=type("Payload", (), {"model": "planner-large"})(),
+        credentials=_credentials(),
+    )
+
+    assert result["ok"] is True
+    assert models.probes == [(ACTOR_ID, "planner-large")]
+
+
+def test_model_config_route_reports_an_unconfigured_service():
+    route = _endpoint(_router(), "get__api_v1_admin_model_config")
+
+    with pytest.raises(HTTPException) as caught:
+        route.endpoint(credentials=_credentials())
+
+    assert caught.value.status_code == 503

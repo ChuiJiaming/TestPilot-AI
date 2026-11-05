@@ -307,9 +307,11 @@ def execute_admitted_run(session_factory, *, run_id: UUID,
     remaining_budget = bundle["policy"].get("agent_budget_remaining", configured_budget)
     remaining_budget = min(configured_budget, max(0, remaining_budget if type(remaining_budget) is int else 0))
     if remaining_budget:
+        from apps.api.app.operations.model_config import resolve_model_config
         from apps.api.app.operations.quotas import QuotaService
 
-        agent_provider = RunAgentProvider.from_environment(
+        agent_provider = RunAgentProvider.from_model_config(
+            resolve_model_config(session_factory),
             quota_service=QuotaService(session_factory()),
             organization_id=bundle["organization_id"],
             run_id=run_id,

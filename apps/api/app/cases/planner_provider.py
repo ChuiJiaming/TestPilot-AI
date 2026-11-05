@@ -1,7 +1,5 @@
 """OpenAI-compatible LangChain adapter used by the isolated Agent Worker."""
 
-import json
-import os
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
@@ -32,30 +30,16 @@ class OpenAICompatibleScenarioPlanner:
 
     @classmethod
     def from_environment(cls):
-        base_url = os.getenv("TESTPILOT_LLM_BASE_URL", "https://api.openai.com/v1")
-        api_key = os.getenv("TESTPILOT_LLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
-        raw_pricing = os.getenv("TESTPILOT_LLM_PRICING_JSON", "")
-        if not raw_pricing:
+        from apps.api.app.operations.model_config import resolve_model_config
+
+        return cls.from_model_config(resolve_model_config())
+
+    @classmethod
+    def from_model_config(cls, config):
+        """Build the planner from the resolved platform model configuration."""
+        if not config.pricing:
             raise ValueError("TESTPILOT_LLM_PRICING_JSON must define provider rates per model")
-        try:
-            parsed = json.loads(raw_pricing)
-            if not isinstance(parsed, dict):
-                raise ValueError("pricing JSON must be an object")
-            pricing = {
-                model: {
-                    "input_usd_per_million": Decimal(str(rate["input_usd_per_million"])),
-                    "output_usd_per_million": Decimal(str(rate["output_usd_per_million"])),
-                }
-                for model, rate in parsed.items()
-            }
-            if any(not value.is_finite() or value < 0
-                   for rates in pricing.values() for value in rates.values()):
-                raise ValueError("model pricing rates must be finite and non-negative")
-        except (json.JSONDecodeError, KeyError, TypeError, ArithmeticError) as exc:
-            raise ValueError("TESTPILOT_LLM_PRICING_JSON has an invalid model rate map") from exc
-        if not pricing:
-            raise ValueError("TESTPILOT_LLM_PRICING_JSON must contain at least one model")
-        return cls(base_url=base_url, api_key=api_key, pricing=pricing)
+        return cls(base_url=config.base_url, api_key=config.api_key, pricing=config.pricing)
 
     def generate(self, *, requirement: str, model_name: str) -> PlannerOutput:
         from langchain_openai import ChatOpenAI

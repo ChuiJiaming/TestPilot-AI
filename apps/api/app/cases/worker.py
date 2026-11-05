@@ -528,7 +528,10 @@ def generate_scenario(generation_id: str):
     class ConfiguredPlanner:
         def generate(self, *, requirement: str, model_name: str):
             from apps.api.app.cases.planner_provider import OpenAICompatibleScenarioPlanner
-            return OpenAICompatibleScenarioPlanner.from_environment().generate(
+            from apps.api.app.operations.model_config import resolve_model_config
+
+            config = resolve_model_config(session_factory())
+            return OpenAICompatibleScenarioPlanner.from_model_config(config).generate(
                 requirement=requirement, model_name=model_name)
 
     return process_generation_job(

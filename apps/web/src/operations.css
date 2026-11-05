@@ -141,3 +141,43 @@
   .operations-decision-form .button-row { width: 100%; }
   .operations-decision-form .button { flex: 1; }
 }
+
+/* AI model configuration */
+.model-status { display: grid; gap: 12px; }
+.model-status.ready { border-color: #d9efe3; background: #f7fdf9; }
+.model-status.blocked { border-color: #f3e3c4; background: #fffcf5; }
+.model-status-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.model-status-icon { display: grid; width: 34px; height: 34px; flex: 0 0 34px; place-items: center; border-radius: 10px; background: #eef1ff; color: #5668d8; }
+.model-status.ready .model-status-icon { background: #e7f7ee; color: #2f8f5f; }
+.model-status.blocked .model-status-icon { background: #fdf1da; color: #9a6a12; }
+.model-status-copy { display: grid; flex: 1; gap: 4px; min-width: 160px; }
+.model-status-copy b { color: #3f4c64; font-size: 12.5px; }
+.model-status-copy small { color: #8b96a8; font-size: 10px; }
+.model-status-head > .button { flex: 0 0 auto; height: 34px; padding: 0 12px; font-size: 11px; }
+.model-issues { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.model-issues li { display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #fff8ea; color: #8a5f0e; font-size: 10.5px; line-height: 1.5; }
+.model-issues code { flex: 0 0 auto; padding: 2px 6px; border-radius: 5px; background: #fbeccb; color: #8a5f0e; font: 9px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-probe { padding: 9px 11px; border-radius: 8px; font-size: 10.5px; }
+.model-probe.ok { border: 1px solid #d6eedf; background: #effaf3; color: #28734c; }
+.model-probe.bad { border: 1px solid #f0d1cf; background: #fff2f1; color: #a3403a; }
+.model-config-fields { display: grid; gap: 10px; margin: 14px 0 0; }
+.model-config-fields > div { display: grid; gap: 4px; }
+.model-config-fields dt { color: #929daf; font-size: 9px; }
+.model-config-fields dd { display: flex; align-items: center; gap: 7px; margin: 0; color: #4a5771; font-size: 11px; overflow-wrap: anywhere; }
+.model-config-fields code { padding: 2px 6px; border-radius: 5px; background: #f5f7fb; color: #6b76a4; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.model-badge { padding: 2px 7px; border-radius: 99px; font-size: 8.5px; }
+.model-badge.ok { background: #e9f8f0; color: #2f8a5e; }
+.model-badge.bad { background: #fdeeec; color: #a8403a; }
+.model-pricing-table .operations-audit-head, .model-pricing-table .operations-audit-row { grid-template-columns: minmax(0, 1.5fr) minmax(88px, 1fr) minmax(88px, 1fr); }
+.model-pricing-table .operations-audit-row > span:first-child { display: block; }
+.model-form-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.model-pricing-editor { display: grid; gap: 9px; margin: 0; padding: 0; border: 0; }
+.model-pricing-editor legend { margin-bottom: 8px; color: #6d7a90; font-size: 10.5px; font-weight: 600; }
+.model-pricing-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(84px, .8fr) minmax(84px, .8fr) 32px; gap: 8px; align-items: center; }
+.model-pricing-remove { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #e6eaf1; border-radius: 8px; background: #fff; color: #9aa4b3; }
+.model-pricing-remove:hover:not(:disabled) { border-color: #f0cdc9; color: #b2574e; }
+.model-pricing-remove:disabled { opacity: .45; }
+@media (max-width: 680px) {
+  .model-form-pair, .model-pricing-row { grid-template-columns: 1fr; }
+  .model-pricing-remove { width: 100%; }
+}

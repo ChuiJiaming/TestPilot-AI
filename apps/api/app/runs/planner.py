@@ -1,7 +1,6 @@
 """Budget-gated, structured Planner and Explorer provider for Run execution."""
 
 import json
-import os
 from datetime import datetime, timezone
 from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -57,13 +56,23 @@ class RunAgentProvider:
     @classmethod
     def from_environment(cls, *, quota_service=None, organization_id=None,
                          run_id=None, attempt_token=None):
-        model_name = (os.getenv("TESTPILOT_RUN_AGENT_MODEL") or "").strip()
-        api_key = os.getenv("TESTPILOT_LLM_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+        from apps.api.app.operations.model_config import resolve_model_config
+
+        return cls.from_model_config(
+            resolve_model_config(), quota_service=quota_service,
+            organization_id=organization_id, run_id=run_id,
+            attempt_token=attempt_token,
+        )
+
+    @classmethod
+    def from_model_config(cls, config, *, quota_service=None, organization_id=None,
+                          run_id=None, attempt_token=None):
+        model_name = (config.run_agent_model or "").strip()
+        api_key = config.api_key
         if not model_name or not api_key:
             return None
         return cls(
-            model_name=model_name, api_key=api_key,
-            base_url=os.getenv("TESTPILOT_LLM_BASE_URL", "https://api.openai.com/v1"),
+            model_name=model_name, api_key=api_key, base_url=config.base_url,
             quota_service=quota_service, organization_id=organization_id,
             run_id=run_id, attempt_token=attempt_token,
         )

@@ -110,6 +110,27 @@ createServer((req, res) => {
     return;
   }
   // 平台设置（OperationsPage 依赖 pending_changes 字段）
+  if (p === "/api/v1/admin/model-config" && req.method === "GET") return json(res, 200, {
+    source: "database",
+    base_url: "https://open.bigmodel.cn/api/paas/v4",
+    api_key_env: "TESTPILOT_LLM_API_KEY",
+    api_key_configured: true,
+    planner_model: "glm-4-plus",
+    run_agent_model: "glm-4-flash",
+    pricing: [
+      { model: "glm-4-flash", input_usd_per_million: 0.014, output_usd_per_million: 0.014 },
+      { model: "glm-4-plus", input_usd_per_million: 0.69, output_usd_per_million: 0.69 },
+    ],
+    ready: true,
+    issues: [],
+    updated_at: "2026-11-02T10:20:00Z",
+  });
+  if (p === "/api/v1/admin/model-config/test" && req.method === "POST") return json(res, 200, {
+    ok: true, model: "glm-4-flash", latency_ms: 412, error_code: "", message: "连接成功。",
+  });
+  if (p === "/api/v1/model-options" && req.method === "GET") return json(res, 200, {
+    items: ["glm-4-flash", "glm-4-plus"], default: "glm-4-plus",
+  });
   if (p === "/api/v1/system-settings" && req.method === "GET") return json(res, 200, {
     items: [
       { key: "maintenance_mode", value_hash: "sha256:3f7c1a92e4b8d056", updated_at: "2026-10-28T09:12:00Z" },

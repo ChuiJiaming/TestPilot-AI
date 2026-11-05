@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Activity, Bell, Check, Download, FileClock, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertTriangle, Bell, Check, Download, FileClock, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { api, ApiError, jsonBody, type Organization } from "./api";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/modal";
@@ -69,7 +69,29 @@ type AuditFilters = {
   created_at_from: string;
   created_at_to: string;
 };
-type Tab = "quota" | "notifications" | "audit" | "settings";
+type ModelPricing = { model: string; input_usd_per_million: number; output_usd_per_million: number };
+type ModelConfigView = {
+  source: "database" | "environment" | "default";
+  base_url: string;
+  api_key_env: string;
+  api_key_configured: boolean;
+  planner_model: string;
+  run_agent_model: string;
+  pricing: ModelPricing[];
+  ready: boolean;
+  issues: { code: string; message: string }[];
+  updated_at: string | null;
+};
+type ModelProbe = { ok: boolean; model: string; latency_ms: number; error_code: string; message: string };
+type ModelDraft = {
+  base_url: string;
+  api_key_env: string;
+  planner_model: string;
+  run_agent_model: string;
+  pricing: { model: string; input: string; output: string }[];
+  reason: string;
+};
+type Tab = "quota" | "notifications" | "audit" | "models" | "settings";
 
 const emptyAuditFilters: AuditFilters = {
   action: "", resource_type: "", actor_user_id: "", resource_id: "", created_at_from: "", created_at_to: "",
@@ -82,6 +104,21 @@ const settingKeys = [
   "provider_timeout_seconds",
   "notification_retry_limit",
 ] as const;
+
+const emptyModelDraft: ModelDraft = {
+  base_url: "",
+  api_key_env: "TESTPILOT_LLM_API_KEY",
+  planner_model: "",
+  run_agent_model: "",
+  pricing: [{ model: "", input: "", output: "" }],
+  reason: "",
+};
+
+const sourceLabels: Record<ModelConfigView["source"], string> = {
+  database: "数据库已批准设置",
+  environment: "环境变量",
+  default: "内置默认值",
+};
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "操作失败，请稍后重试。";
@@ -147,7 +184,22 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   const [settingsError, setSettingsError] = useState("");
   const [settingsNotice, setSettingsNotice] = useState("");
 
+  const [modelConfig, setModelConfig] = useState<ModelConfigView | null>(null);
+  const [modelConfigLoading, setModelConfigLoading] = useState(false);
+  const [modelConfigError, setModelConfigError] = useState("");
+  const [modelConfigNotice, setModelConfigNotice] = useState("");
+  const [modelDraft, setModelDraft] = useState<ModelDraft>(emptyModelDraft);
+  const [showModelForm, setShowModelForm] = useState(false);
+  const [modelFormError, setModelFormError] = useState("");
+  const [modelBusy, setModelBusy] = useState(false);
+  const [modelProbe, setModelProbe] = useState<ModelProbe | null>(null);
+  const [modelProbeBusy, setModelProbeBusy] = useState(false);
+
   const isOrganizationAdmin = organization?.role === "org_admin";
+  const modelChanges = useMemo(
+    () => settingChanges.filter((change) => change.key === "llm_config"),
+    [settingChanges],
+  );
   const activePreferences = useMemo(() => new Map(
     preferences.map((preference) => [`${preference.event_type}:${preference.channel}`, preference.enabled]),
   ), [preferences]);
@@ -206,6 +258,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
   useEffect(() => {
     if (tab === "notifications") void loadNotifications();
     if (tab === "audit") void loadAudit();
+    if (tab === "models" && platformAccess === "allowed") void loadModelConfig();
     if (tab === "settings" && platformAccess === "allowed") void loadSettings();
     // Each tab owns its request lifecycle; the selected organization is included where the API is scoped.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -434,6 +487,117 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     }
   }
 
+  async function loadModelConfig() {
+    setModelConfigLoading(true);
+    setModelConfigError("");
+    try {
+      const [view] = await Promise.all([
+        api<ModelConfigView>("/api/v1/admin/model-config", {}, accessToken),
+        loadSettings(),
+      ]);
+      setModelConfig(view);
+    } catch (error) {
+      setModelConfigError(errorMessage(error));
+    } finally {
+      setModelConfigLoading(false);
+    }
+  }
+
+  function openModelForm() {
+    if (!modelConfig) return;
+    setModelFormError("");
+    setModelDraft({
+      base_url: modelConfig.base_url,
+      api_key_env: modelConfig.api_key_env,
+      planner_model: modelConfig.planner_model,
+      run_agent_model: modelConfig.run_agent_model,
+      pricing: modelConfig.pricing.length > 0
+        ? modelConfig.pricing.map((row) => ({
+          model: row.model,
+          input: String(row.input_usd_per_million),
+          output: String(row.output_usd_per_million),
+        }))
+        : [{ model: modelConfig.run_agent_model, input: "", output: "" }],
+      reason: "",
+    });
+    setShowModelForm(true);
+  }
+
+  function updatePricingRow(index: number, patch: Partial<ModelDraft["pricing"][number]>) {
+    setModelDraft((current) => ({
+      ...current,
+      pricing: current.pricing.map((row, position) => position === index ? { ...row, ...patch } : row),
+    }));
+  }
+
+  async function saveModelConfig(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setModelFormError("");
+    const pricing: Record<string, { input_usd_per_million: number; output_usd_per_million: number }> = {};
+    for (const row of modelDraft.pricing) {
+      const model = row.model.trim();
+      if (!model) continue;
+      const input = Number(row.input);
+      const output = Number(row.output);
+      if (!Number.isFinite(input) || input < 0 || !Number.isFinite(output) || output < 0) {
+        setModelFormError(`模型 ${model} 的单价必须是非负数字。`);
+        return;
+      }
+      if (pricing[model]) {
+        setModelFormError(`模型 ${model} 重复出现在定价表中。`);
+        return;
+      }
+      pricing[model] = { input_usd_per_million: input, output_usd_per_million: output };
+    }
+    if (Object.keys(pricing).length === 0) {
+      setModelFormError("至少需要为一个模型配置定价。");
+      return;
+    }
+    for (const model of [modelDraft.planner_model.trim(), modelDraft.run_agent_model.trim()]) {
+      if (model && !pricing[model]) {
+        setModelFormError(`模型 ${model} 不在定价表中，请先补充单价。`);
+        return;
+      }
+    }
+    setModelBusy(true);
+    try {
+      await api<SettingChange>("/api/v1/system-settings", {
+        method: "PUT",
+        body: JSON.stringify({
+          key: "llm_config",
+          value: {
+            base_url: modelDraft.base_url.trim(),
+            api_key_env: modelDraft.api_key_env.trim(),
+            planner_model: modelDraft.planner_model.trim(),
+            run_agent_model: modelDraft.run_agent_model.trim(),
+            pricing,
+          },
+          reason: modelDraft.reason.trim(),
+        }),
+      }, accessToken);
+      setShowModelForm(false);
+      setModelConfigNotice("模型配置变更已提交，需另一位平台管理员在「平台设置」批准后生效。");
+      await Promise.all([loadModelConfig(), loadSettings()]);
+    } catch (error) {
+      setModelFormError(errorMessage(error));
+    } finally {
+      setModelBusy(false);
+    }
+  }
+
+  async function probeModelConfig() {
+    setModelProbeBusy(true);
+    setModelProbe(null);
+    setModelConfigError("");
+    try {
+      setModelProbe(await api<ModelProbe>("/api/v1/admin/model-config/test", jsonBody({}), accessToken));
+    } catch (error) {
+      setModelConfigError(errorMessage(error));
+    } finally {
+      setModelProbeBusy(false);
+    }
+  }
+
   function selectTab(next: Tab) {
     setTab(next);
   }
@@ -442,7 +606,10 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     { id: "quota", label: "额度与用量", icon: <Activity size={16} /> },
     { id: "notifications", label: "通知与投递", icon: <Bell size={16} /> },
     { id: "audit", label: "审计日志", icon: <FileClock size={16} /> },
-    ...(platformAccess === "allowed" ? [{ id: "settings" as const, label: "平台设置", icon: <ShieldCheck size={16} /> }] : []),
+    ...(platformAccess === "allowed" ? [
+      { id: "models" as const, label: "AI 模型", icon: <Sparkles size={16} /> },
+      { id: "settings" as const, label: "平台设置", icon: <ShieldCheck size={16} /> },
+    ] : []),
   ];
 
   if (organizations.length === 0) {
@@ -548,6 +715,78 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           {auditEntries.map((entry) => <div className="operations-audit-row" role="row" key={entry.id}><span role="cell"><b>{entry.action}</b><small>记录 #{entry.id}</small></span><span role="cell">{entry.resource_type}<small>{entry.resource_id ?? "—"}</small></span><span role="cell">{formatDate(entry.created_at)}</span><code role="cell" title={entry.entry_hash}>{entry.entry_hash}</code></div>)}
         </div>}
       </Card>
+    </section>}
+
+    {tab === "models" && platformAccess === "allowed" && <section id="operations-panel-models" role="tabpanel" aria-labelledby="operations-tab-models" className="operations-panel">
+      <div className="operations-section-heading"><div><h2>AI 模型</h2><p>平台调用大模型的接口地址、凭据来源与计费单价。API Key 只以环境变量名引用，不会写入数据库或审计日志。</p></div>
+        <div className="button-row"><Button variant="secondary" type="button" onClick={() => void loadModelConfig()} disabled={modelConfigLoading}><RefreshCw size={14} />刷新</Button><Button type="button" onClick={openModelForm} disabled={!modelConfig}>编辑配置</Button></div>
+      </div>
+      {modelConfigError && <div className="alert alert-error" role="alert">{modelConfigError}</div>}
+      {modelConfigNotice && <div className="alert alert-success" role="status">{modelConfigNotice}</div>}
+      {modelConfigLoading && !modelConfig && <div className="operations-loading" role="status">正在读取模型配置…</div>}
+      {modelConfig && <>
+        <Card className={`operations-card model-status ${modelConfig.ready ? "ready" : "blocked"}`}>
+          <div className="model-status-head">
+            <span className="model-status-icon" aria-hidden="true">{modelConfig.ready ? <Check size={18} /> : <AlertTriangle size={18} />}</span>
+            <div className="model-status-copy"><b>{modelConfig.ready ? "模型调用已就绪" : "模型调用尚未就绪"}</b><small>生效来源：{sourceLabels[modelConfig.source]}{modelConfig.updated_at ? ` · 更新于 ${formatDate(modelConfig.updated_at)}` : ""}</small></div>
+            <Button variant="secondary" type="button" onClick={() => void probeModelConfig()} disabled={modelProbeBusy}>{modelProbeBusy ? "正在测试…" : "测试连接"}</Button>
+          </div>
+          {modelConfig.issues.length > 0 && <ul className="model-issues">{modelConfig.issues.map((issue) => <li key={issue.code}><code>{issue.code}</code>{issue.message}</li>)}</ul>}
+          {modelProbe && <div className={`model-probe ${modelProbe.ok ? "ok" : "bad"}`} role="status">{modelProbe.ok ? `连接成功 · ${modelProbe.model} · ${modelProbe.latency_ms}ms` : `连接失败 · ${modelProbe.error_code} ${modelProbe.message}`}</div>}
+        </Card>
+        <div className="operations-two-column">
+          <Card className="operations-card">
+            <div className="operations-card-heading"><div><CardTitle>连接与模型</CardTitle><p>worker 每次调用前都会重新读取这份生效配置。</p></div></div>
+            <dl className="model-config-fields">
+              <div><dt>接口地址</dt><dd><code>{modelConfig.base_url}</code></dd></div>
+              <div><dt>API Key 环境变量</dt><dd><code>{modelConfig.api_key_env}</code><span className={`model-badge ${modelConfig.api_key_configured ? "ok" : "bad"}`}>{modelConfig.api_key_configured ? "已注入" : "未注入"}</span></dd></div>
+              <div><dt>场景生成模型</dt><dd>{modelConfig.planner_model || "未配置"}</dd></div>
+              <div><dt>Run Agent 模型</dt><dd>{modelConfig.run_agent_model || "未配置"}</dd></div>
+            </dl>
+          </Card>
+          <Card className="operations-card">
+            <div className="operations-card-heading"><div><CardTitle>模型定价</CardTitle><p>按每百万 token 计价，用于成本核算与额度结算。</p></div><span className="operations-count">{modelConfig.pricing.length}</span></div>
+            {modelConfig.pricing.length === 0 ? <p className="operations-empty-inline">尚未配置模型定价。</p> : <div className="operations-audit-table model-pricing-table" role="table" aria-label="模型定价">
+              <div className="operations-audit-head" role="row"><span role="columnheader">模型</span><span role="columnheader">输入 / 百万 token</span><span role="columnheader">输出 / 百万 token</span></div>
+              {modelConfig.pricing.map((row) => <div className="operations-audit-row" role="row" key={row.model}><span role="cell"><b>{row.model}</b></span><span role="cell">${row.input_usd_per_million}</span><span role="cell">${row.output_usd_per_million}</span></div>)}
+            </div>}
+          </Card>
+        </div>
+        {modelChanges.length > 0 && <Card className="operations-card">
+          <div className="operations-card-heading"><div><CardTitle>模型配置变更</CardTitle><p>配置在另一位平台管理员批准后才会被 worker 采用。</p></div><span className="operations-count">{modelChanges.length}</span></div>
+          <div className="operations-change-list">{modelChanges.map((change) => <article className="operations-change-card" key={change.id}>
+            <div className="operations-change-title"><div><b>llm_config</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
+            <p>{change.reason}</p>
+            <div className="operations-actors"><span>申请人 <b>{change.requested_by}</b></span><span>审批人 <b>{change.approved_by ?? "待审批"}</b></span></div>
+            {change.status === "PENDING" && (change.requested_by === currentUserId
+              ? <p className="operations-separation-note">发起人不能审批自己的变更</p>
+              : <Button variant="secondary" type="button" onClick={() => selectTab("settings")}>前往平台设置审批</Button>)}
+          </article>)}</div>
+        </Card>}
+      </>}
+      {showModelForm && <Modal title="编辑 AI 模型配置" description="保存后会生成一条待审批变更；API Key 请通过环境变量注入，此处只填写变量名。" wide onClose={() => setShowModelForm(false)}>
+        <form className="form-stack" onSubmit={(event) => void saveModelConfig(event)}>
+          {modelFormError && <div className="alert alert-error" role="alert">{modelFormError}</div>}
+          <div><Label htmlFor="model-base-url">接口地址</Label><Input id="model-base-url" value={modelDraft.base_url} onChange={(event) => setModelDraft((current) => ({ ...current, base_url: event.target.value }))} placeholder="https://api.openai.com/v1" required maxLength={2048} /></div>
+          <div><Label htmlFor="model-api-key-env">API Key 环境变量名</Label><Input id="model-api-key-env" value={modelDraft.api_key_env} onChange={(event) => setModelDraft((current) => ({ ...current, api_key_env: event.target.value }))} placeholder="TESTPILOT_LLM_API_KEY" required maxLength={64} /></div>
+          <div className="model-form-pair">
+            <div><Label htmlFor="model-planner">场景生成模型</Label><Input id="model-planner" value={modelDraft.planner_model} onChange={(event) => setModelDraft((current) => ({ ...current, planner_model: event.target.value }))} placeholder="gpt-4o-mini" required maxLength={120} /></div>
+            <div><Label htmlFor="model-run-agent">Run Agent 模型</Label><Input id="model-run-agent" value={modelDraft.run_agent_model} onChange={(event) => setModelDraft((current) => ({ ...current, run_agent_model: event.target.value }))} placeholder="gpt-4o-mini" required maxLength={120} /></div>
+          </div>
+          <fieldset className="model-pricing-editor">
+            <legend>模型定价（美元 / 百万 token）</legend>
+            {modelDraft.pricing.map((row, index) => <div className="model-pricing-row" key={`pricing-${index}`}>
+              <Input aria-label={`定价模型 ${index + 1}`} value={row.model} onChange={(event) => updatePricingRow(index, { model: event.target.value })} placeholder="模型名称" maxLength={120} />
+              <Input aria-label={`输入单价 ${index + 1}`} type="number" min={0} step="0.001" value={row.input} onChange={(event) => updatePricingRow(index, { input: event.target.value })} placeholder="输入" />
+              <Input aria-label={`输出单价 ${index + 1}`} type="number" min={0} step="0.001" value={row.output} onChange={(event) => updatePricingRow(index, { output: event.target.value })} placeholder="输出" />
+              <button type="button" className="model-pricing-remove" aria-label={`删除定价行 ${index + 1}`} onClick={() => setModelDraft((current) => ({ ...current, pricing: current.pricing.filter((_, position) => position !== index) }))} disabled={modelDraft.pricing.length === 1}><Trash2 size={14} /></button>
+            </div>)}
+            <Button variant="secondary" type="button" onClick={() => setModelDraft((current) => ({ ...current, pricing: [...current.pricing, { model: "", input: "", output: "" }] }))}><Plus size={14} />新增模型定价</Button>
+          </fieldset>
+          <div><Label htmlFor="model-change-reason">变更理由</Label><Input id="model-change-reason" value={modelDraft.reason} onChange={(event) => setModelDraft((current) => ({ ...current, reason: event.target.value }))} maxLength={500} required /></div>
+          <Button type="submit" disabled={modelBusy}>{modelBusy ? "正在提交…" : "提交审批申请"}</Button>
+        </form>
+      </Modal>}
     </section>}
 
     {tab === "settings" && platformAccess === "allowed" && <section id="operations-panel-settings" role="tabpanel" aria-labelledby="operations-tab-settings" className="operations-panel">

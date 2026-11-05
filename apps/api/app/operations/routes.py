@@ -16,6 +16,7 @@ from apps.api.app.operations.notifications import (
     NotificationService,
 )
 from apps.api.app.operations.audit import AuditForbidden, AuditRepository
+from apps.api.app.operations.model_config import ModelConfigService
 from apps.api.app.operations.quotas import QuotaPolicyForbidden, QuotaPolicyService
 from apps.api.app.operations.settings import (
     SettingConflict,
@@ -193,6 +194,47 @@ class SystemSettingDecisionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class ModelPricingView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str = Field(min_length=1, max_length=120)
+    input_usd_per_million: float = Field(ge=0)
+    output_usd_per_million: float = Field(ge=0)
+
+
+class ModelConfigIssueView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str
+    message: str
+
+
+class ModelConfigView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: Literal["database", "environment", "default"]
+    base_url: str
+    api_key_env: str
+    api_key_configured: bool
+    planner_model: str
+    run_agent_model: str
+    pricing: list[ModelPricingView]
+    ready: bool
+    issues: list[ModelConfigIssueView]
+    updated_at: datetime | None = None
+
+
+class ModelConfigProbeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str | None = Field(default=None, max_length=120)
+
+
+class ModelConfigProbeView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ok: bool
+    model: str
+    latency_ms: int = Field(ge=0)
+    error_code: str
+    message: str
+
+
 def create_operations_router(
     *,
     notification_service: NotificationService | None,
@@ -200,6 +242,7 @@ def create_operations_router(
     audit_repository: AuditRepository | None = None,
     quota_policy_service: QuotaPolicyService | None = None,
     system_setting_service: SystemSettingService | None = None,
+    model_config_service: "ModelConfigService | None" = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1", tags=["Operations & Audit"])
     bearer = HTTPBearer(scheme_name="BearerAuth", auto_error=False)
@@ -626,5 +669,38 @@ def create_operations_router(
             raise HTTPException(status_code=409, detail="Current setting changed; proposal is stale") from exc
         except SettingInvalid as exc:
             raise HTTPException(status_code=422, detail="Invalid system setting decision") from exc
+
+    @router.get(
+        "/admin/model-config",
+        response_model=ModelConfigView,
+        operation_id="get__api_v1_admin_model_config",
+    )
+    def get_admin_model_config(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        actor_id = actor_for(credentials, "platform:admin")
+        if model_config_service is None:
+            raise HTTPException(status_code=503, detail="Model configuration service is not configured")
+        try:
+            return model_config_service.view(actor_id)
+        except SettingForbidden as exc:
+            raise HTTPException(status_code=403, detail="Platform administrator access required") from exc
+
+    @router.post(
+        "/admin/model-config/test",
+        response_model=ModelConfigProbeView,
+        operation_id="post__api_v1_admin_model_config_test",
+    )
+    def test_admin_model_config(
+        payload: ModelConfigProbeRequest,
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+    ):
+        actor_id = actor_for(credentials, "platform:admin")
+        if model_config_service is None:
+            raise HTTPException(status_code=503, detail="Model configuration service is not configured")
+        try:
+            return model_config_service.probe(actor_id, model=payload.model)
+        except SettingForbidden as exc:
+            raise HTTPException(status_code=403, detail="Platform administrator access required") from exc
 
     return router
