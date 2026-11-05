@@ -21,6 +21,30 @@ from apps.api.app.cases.persistence import CaseRepository
 from apps.api.app.cases.planning import GenerationRepository, PlanningRepository
 
 
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _validate_allowed_origin(origin: str) -> None:
+    """Reject anything that could turn the refresh cookie into a leak.
+
+    Production origins must be HTTPS. Plain HTTP is accepted only for loopback
+    hosts, because browsers treat http://localhost as a secure context and
+    allow Secure cookies there: without this exception the API cannot be run
+    against a local `vite dev` server at all.
+    """
+    parsed = urlsplit(origin)
+    if not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
+        raise ValueError("allowed origins must be origins without a path, query or fragment")
+    if parsed.scheme == "https":
+        return
+    if parsed.scheme == "http" and (parsed.hostname or "") in LOOPBACK_HOSTS:
+        return
+    raise ValueError(
+        "allowed origins must use HTTPS, or plain HTTP on a loopback host "
+        "(localhost / 127.0.0.1 / ::1)"
+    )
+
+
 @dataclass(frozen=True)
 class EmailVerificationSettings:
     database_url: str
@@ -50,9 +74,7 @@ class EmailVerificationSettings:
         if not self.allowed_origins:
             raise ValueError("at least one allowed Origin is required")
         for origin in self.allowed_origins:
-            parsed = urlsplit(origin)
-            if parsed.scheme != "https" or not parsed.netloc or parsed.path or parsed.query or parsed.fragment:
-                raise ValueError("allowed origins must be HTTPS origins without a path")
+            _validate_allowed_origin(origin)
         if not 1 <= self.smtp_port <= 65535:
             raise ValueError("smtp_port must be between 1 and 65535")
 

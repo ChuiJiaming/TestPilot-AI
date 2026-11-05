@@ -23,3 +23,6 @@ celerybeat-schedule*
 
 # published app marker
 .wbapp_*.genie
+
+# Local-only artifacts (DB dumps, dev screenshots, scratch scripts)
+.local-backup/
