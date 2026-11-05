@@ -201,7 +201,6 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-scroll">
-        <a className="brand" href="#workspace" aria-label="Sureshot 首页"><span className="brand-mark"><SureshotMark size={19} /></span></a>
         <div className="workspace-switch"><span className="workspace-avatar">{(organizations[0]?.name ?? "T").slice(0, 1).toUpperCase()}</span><div><small>工作空间</small><strong>{organizations[0]?.name ?? "我的工作空间"}</strong></div><ChevronDown size={16} /></div>
         <div className="nav-label">工作区</div>
         <nav className="main-nav" aria-label="主导航">
