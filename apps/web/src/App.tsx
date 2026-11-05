@@ -200,6 +200,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
   return (
     <div className="app-shell">
       <aside className="sidebar">
+        <div className="sidebar-scroll">
         <a className="brand" href="#workspace"><span className="brand-mark"><SureshotMark size={19} /></span> Sureshot</a>
         <div className="workspace-switch"><span className="workspace-avatar">{(organizations[0]?.name ?? "T").slice(0, 1).toUpperCase()}</span><div><small>工作空间</small><strong>{organizations[0]?.name ?? "我的工作空间"}</strong></div><ChevronDown size={16} /></div>
         <div className="nav-label">工作区</div>
@@ -221,6 +222,7 @@ function AppShell({ auth, onSignOut }: { auth: AuthResult; onSignOut: () => void
           <NavItem icon={<Monitor size={17} />} label="安全与会话" active={page === "sessions"} onClick={() => setPage("sessions")} />
           <NavItem icon={<KeyRound size={17} />} label="邀请与凭据" active={page === "access"} onClick={() => setPage("access")} />
         </nav>
+        </div>
         <div className="sidebar-bottom"><div className="help-card"><span className="help-icon"><CircleHelp size={16} /></span><div><b>需要帮助？</b><small>查看平台使用指南</small></div></div><div className="sidebar-version">Sureshot <span>V10.3</span></div></div>
       </aside>
       <main className="main-area">
