@@ -1,11 +1,16 @@
 from typing import Any
-from uuid import UUID, uuid4
+import logging
+from uuid import UUID
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from apps.api.app.core.observability import trace_id_for_request
+
+logger = logging.getLogger("testpilot.error")
 
 
 class ProblemDetails(BaseModel):
@@ -53,7 +58,7 @@ def install_error_handlers(app: FastAPI) -> None:
         body = problem_details(
             code=code,
             message=message,
-            trace_id=uuid4(),
+            trace_id=trace_id_for_request(request),
         )
         return JSONResponse(
             status_code=exception.status_code,
@@ -67,7 +72,7 @@ def install_error_handlers(app: FastAPI) -> None:
         body = problem_details(
             code="VALIDATION_FAILED",
             message="Request validation failed",
-            trace_id=uuid4(),
+            trace_id=trace_id_for_request(request),
             details={"fields": [".".join(map(str, error["loc"])) for error in exception.errors()]},
         )
         return JSONResponse(
@@ -79,10 +84,16 @@ def install_error_handlers(app: FastAPI) -> None:
     async def handle_unexpected_exception(
         request: Request, exception: Exception
     ) -> JSONResponse:
+        # The trace_id is the only thing the client may see; the stack trace goes
+        # to the log line carrying the same request_id.
+        logger.exception(
+            "unhandled error on %s %s", request.method, request.url.path,
+            exc_info=exception,
+        )
         body = problem_details(
             code="INTERNAL_ERROR",
             message="An internal error occurred",
-            trace_id=uuid4(),
+            trace_id=trace_id_for_request(request),
         )
         return JSONResponse(
             status_code=500,

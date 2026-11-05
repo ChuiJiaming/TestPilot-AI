@@ -1,8 +1,9 @@
 from collections.abc import Callable, Mapping
+import hmac
 import os
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 # Register every ORM table before any mapper is configured, so string foreign keys
 # resolve regardless of which modules this process happens to import.
@@ -11,6 +12,11 @@ from apps.api.app import orm_models
 orm_models.load_all_models()
 
 from apps.api.app.core.errors import install_error_handlers
+from apps.api.app.core.observability import (
+    MetricsRegistry,
+    configure_logging,
+    install_observability,
+)
 from apps.api.app.auth.routes import (
     PasswordHash,
     create_auth_router,
@@ -18,6 +24,7 @@ from apps.api.app.auth.routes import (
     create_verification_admin_router,
 )
 from apps.api.app.auth.verification import EmailVerificationService
+from apps.api.app.auth.password_reset import PasswordResetService
 from apps.api.app.auth.bootstrap import build_auth_components, settings_from_environment
 from apps.api.app.auth.sessions import AuthSessionService
 from apps.api.app.tenancy.persistence import OrganizationProjectRepository
@@ -42,6 +49,7 @@ from apps.api.app.reports.storage import S3ReportStorage
 from apps.api.app.integrations.persistence import IntegrationRepository
 from apps.api.app.integrations.routes import create_integration_router
 from apps.api.app.integrations.secrets import SecretRefResolver
+from apps.api.app.integrations.secrets import from_environment as secret_resolver_from_environment
 from apps.api.app.operations.notifications import NotificationService
 from apps.api.app.operations.routes import create_operations_router
 from apps.api.app.operations.audit import AuditRepository
@@ -52,11 +60,14 @@ from apps.api.app.operations.settings import SystemSettingService
 
 ReadinessProbe = Callable[[], bool]
 
+APP_VERSION = "1.0.0"
+
 
 def create_app(
     readiness_probes: Mapping[str, ReadinessProbe] | None = None,
     *,
     email_verification_service: EmailVerificationService | None = None,
+    password_reset_service: PasswordResetService | None = None,
     password_hasher: PasswordHash | None = None,
     auth_sessions: AuthSessionService | None = None,
     allowed_origins: tuple[str, ...] = (),
@@ -81,16 +92,23 @@ def create_app(
 ) -> FastAPI:
     app = FastAPI(
         title="TestPilot AI API",
-        version="1.0.0",
+        version=APP_VERSION,
         description="Enterprise AI web automation testing platform API.",
     )
     install_error_handlers(app)
+
+    # Correlation first: every log line, error trace_id and metrics sample below
+    # inherits the request ID installed by this middleware.
+    metrics = MetricsRegistry()
+    install_observability(app, metrics=metrics)
+    app.state.metrics = metrics
     app.include_router(
         create_auth_router(
             service=email_verification_service,
             password_hash=password_hasher,
             auth_sessions=auth_sessions,
             allowed_origins=allowed_origins,
+            password_reset=password_reset_service,
         )
     )
     app.include_router(create_verification_admin_router(
@@ -178,10 +196,36 @@ def create_app(
             content={"status": "ready" if ready else "not_ready", "checks": checks},
         )
 
+    @app.get(
+        "/api/v1/health/live",
+        tags=["Health"],
+        operation_id="get_api_v1_health_live",
+    )
+    def liveness() -> dict[str, str]:
+        """Liveness must never depend on PostgreSQL/Redis/S3.
+
+        If it did, a database blip would restart every API pod and turn a
+        recoverable dependency outage into a self-inflicted restart loop.
+        """
+        return {"status": "alive"}
+
+    @app.get("/metrics", include_in_schema=False)
+    def prometheus_metrics(authorization: str | None = Header(default=None)):
+        expected = os.getenv("TESTPILOT_METRICS_TOKEN")
+        if expected:
+            presented = (authorization or "").removeprefix("Bearer ").strip()
+            if not hmac.compare_digest(presented, expected):
+                raise HTTPException(status_code=403, detail="METRICS_TOKEN_INVALID")
+        return PlainTextResponse(
+            metrics.render(build_version=APP_VERSION),
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
+
     return app
 
 
 def create_default_app() -> FastAPI:
+    configure_logging()
     health_check_gateway = BrowserGatewayHealthClient.from_environment()
     settings = settings_from_environment()
     if settings is None:
@@ -214,6 +258,7 @@ def create_default_app() -> FastAPI:
         {"postgresql": database_ready, "redis": redis_ready,
          "object_storage": object_storage_ready},
         email_verification_service=components.service,
+        password_reset_service=components.password_reset,
         password_hasher=components.password_hasher.hash,
         auth_sessions=components.sessions,
         allowed_origins=settings.allowed_origins,
@@ -231,6 +276,11 @@ def create_default_app() -> FastAPI:
         ),
         quality_repository=quality_repository,
         report_repository=report_repository,
+        # Without TESTPILOT_SECRETREFS_JSON/FILE this stays fail-closed; with a
+        # backend configured, CI integrations can actually resolve credentials.
+        secret_ref_resolver=secret_resolver_from_environment(
+            components.environment_snapshots.session_factory
+        ),
         notification_service=NotificationService(
             components.environment_snapshots.session_factory,
         ),

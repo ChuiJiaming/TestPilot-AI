@@ -212,10 +212,15 @@ class TestIntegrationRoutes:
         assert updated["enabled"] is False
 
     def test_baseline_integration_operation_ids_are_registered(self):
+        # FastAPI >= 0.160 keeps include_router results as lazy `_IncludedRouter`
+        # entries on app.routes, so reflecting over app.routes silently sees only
+        # the routes declared directly on the app. The OpenAPI document is the
+        # stable, version-independent view of what is actually served.
         operation_ids = {
-            route.operation_id
-            for route in self.app.routes
-            if isinstance(route, APIRoute) and route.operation_id
+            operation.get("operationId")
+            for path_item in self.app.openapi()["paths"].values()
+            for operation in path_item.values()
+            if isinstance(operation, dict) and operation.get("operationId")
         }
         assert {
             "get__api_v1_organizations__id__integrations",
