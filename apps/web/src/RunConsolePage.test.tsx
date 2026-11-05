@@ -186,7 +186,7 @@ describe("RunConsolePage Healing review", () => {
   it("shows a 409 conflict and refreshes the terminal review state", async () => {
     setup({
       decisionStatus: 409,
-      decisionBody: { detail: "Healing state conflict" },
+      decisionBody: { message: "Healing state conflict" },
       refreshAfterConflict: true,
     });
     await requestHealingReview();

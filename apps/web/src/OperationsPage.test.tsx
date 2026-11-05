@@ -113,7 +113,7 @@ function setupFetch(options: {
       }], next_cursor: null });
     }
     if (url === "/api/v1/system-settings" && method === "GET") {
-      if (!options.platformAdmin) return Response.json({ detail: "Platform administrator access required" }, { status: 403 });
+      if (!options.platformAdmin) return Response.json({ message: "Platform administrator access required" }, { status: 403 });
       return Response.json({ items: [{ key: "maintenance_mode", value_hash: "a".repeat(64),
         updated_at: "2026-11-02T08:00:00Z" }], pending_changes: [pendingChange] });
     }
@@ -121,7 +121,7 @@ function setupFetch(options: {
       return Response.json({ ...pendingChange, key: body?.key, status: "PENDING" });
     }
     if (url.endsWith("/api/v1/admin/model-config") && method === "GET") {
-      if (!options.platformAdmin) return Response.json({ detail: "Platform administrator access required" }, { status: 403 });
+      if (!options.platformAdmin) return Response.json({ message: "Platform administrator access required" }, { status: 403 });
       return Response.json({
         ...modelConfig, issues: options.modelIssues ?? [], ready: (options.modelIssues ?? []).length === 0,
       });
@@ -131,7 +131,7 @@ function setupFetch(options: {
     }
     if (url.endsWith("/admin/system-setting-changes/change-1/decision") && method === "POST") {
       if (options.decisionStatus) {
-        return Response.json({ detail: options.decisionDetail ?? "Change conflict" }, { status: options.decisionStatus });
+        return Response.json({ message: options.decisionDetail ?? "Change conflict" }, { status: options.decisionStatus });
       }
       return Response.json({ ...pendingChange, status: body?.decision === "approve" ? "APPROVED" : "REJECTED", approved_by: "admin-2" });
     }

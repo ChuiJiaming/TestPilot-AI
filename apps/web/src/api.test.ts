@@ -15,7 +15,7 @@ describe("api client", () => {
   });
 
   it("surfaces safe server error details and status", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: "Project not found" }), { status: 404 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: "Project not found" }), { status: 404 })));
     await expect(api("/api/v1/projects/missing")).rejects.toMatchObject({ message: "Project not found", status: 404 });
   });
 });

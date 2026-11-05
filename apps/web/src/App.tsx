@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Activity, Boxes, Building2, Bug, CalendarClock, ChevronDown, CircleHelp, FileCode2, FileText, KeyRound, Layers3, LogOut, Monitor, Play, Plus, RefreshCw, Settings2, ShieldCheck, Sparkles, UsersRound, Webhook } from "lucide-react";
-import { api, ApiError, jsonBody, type ApiToken, type AuthResult, type Environment, type EnvironmentSnapshot, type Organization, type Project, type SecretRef, type Session } from "./api";
+import { api, ApiError, jsonBody, onSessionRefreshed, refreshSession, type ApiToken, type AuthResult, type Environment, type EnvironmentSnapshot, type Organization, type Project, type SecretRef, type Session } from "./api";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/modal";
 import { Card, CardTitle } from "./components/ui/card";
@@ -28,7 +28,6 @@ import "./operations.css";
 type AuthMode = "login" | "register" | "verify";
 type Page = "overview" | "projects" | "members" | "environments" | "cases" | "planning" | "runs" | "quality" | "reports" | "integrations" | "operations" | "sessions" | "access";
 type Readiness = { status: "ready" | "not_ready"; checks: Record<string, string> };
-let sessionRefreshPromise: Promise<AuthResult> | undefined;
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : "发生未知错误，请稍后重试。";
@@ -671,9 +670,12 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true);
   const clearAuth = useCallback(() => setAuth(null), []);
   useEffect(() => {
+    // 访问令牌在 api() 内静默续期后，把新凭证同步回全局状态。
+    return onSessionRefreshed(setAuth);
+  }, []);
+  useEffect(() => {
     let active = true;
-    sessionRefreshPromise ??= api<AuthResult>("/api/v1/auth/refresh", { method: "POST" }).finally(() => { sessionRefreshPromise = undefined; });
-    sessionRefreshPromise.then((result) => { if (active) setAuth(result); }).catch(() => undefined).finally(() => { if (active) setCheckingSession(false); });
+    refreshSession().then((result) => { if (active) setAuth(result); }).catch(() => undefined).finally(() => { if (active) setCheckingSession(false); });
     return () => { active = false; };
   }, []);
   if (checkingSession) return <div className="boot-screen"><span className="spinner" /><span>正在验证安全会话…</span></div>;

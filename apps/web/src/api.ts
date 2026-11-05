@@ -81,23 +81,74 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(path: string, options: RequestInit = {}, accessToken?: string): Promise<T> {
+/** 这些端点本身不带访问令牌，401 代表凭据错误而非会话过期，不能触发续期重试。 */
+const NO_REFRESH_PATHS = new Set([
+  "/api/v1/auth/login",
+  "/api/v1/auth/register",
+  "/api/v1/auth/verify-email",
+  "/api/v1/auth/verification/resend",
+  "/api/v1/auth/password-reset/request",
+  "/api/v1/auth/password-reset/confirm",
+  "/api/v1/auth/refresh",
+]);
+
+let refreshInFlight: Promise<AuthResult> | null = null;
+let sessionListener: ((auth: AuthResult) => void) | null = null;
+
+/** 注册监听：访问令牌静默续期成功后，把新凭证同步给应用状态。 */
+export function onSessionRefreshed(listener: (auth: AuthResult) => void): () => void {
+  sessionListener = listener;
+  return () => {
+    if (sessionListener === listener) sessionListener = null;
+  };
+}
+
+/** 用 HttpOnly Refresh Cookie 静默换新访问令牌；并发请求共享同一次续期。 */
+export function refreshSession(): Promise<AuthResult> {
+  refreshInFlight ??= request<AuthResult>("/api/v1/auth/refresh", { method: "POST" })
+    .then((result) => {
+      sessionListener?.(result);
+      return result;
+    })
+    .finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, accessToken?: string): Promise<T> {
   const headers = new Headers(options.headers);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   const response = await fetch(path, { ...options, headers, credentials: "include" });
   if (!response.ok) {
+    // 后端统一返回 problem-details（code/message/trace_id），优先展示服务端消息。
     let message = `请求失败 (${response.status})`;
     try {
-      const body = (await response.json()) as { detail?: string; title?: string };
-      message = body.detail ?? body.title ?? message;
+      const body = (await response.json()) as { message?: string };
+      if (body.message) message = body.message;
     } catch {
-      // Keep a useful status message when the server response is not JSON.
+      // 响应不是 JSON 时保留状态码消息。
     }
     throw new ApiError(message, response.status);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+export async function api<T>(path: string, options: RequestInit = {}, accessToken?: string): Promise<T> {
+  try {
+    return await request<T>(path, options, accessToken);
+  } catch (error) {
+    const retriable = error instanceof ApiError && error.status === 401
+      && accessToken !== undefined && !NO_REFRESH_PATHS.has(path);
+    if (!retriable) throw error;
+    // 访问令牌 15 分钟过期：用刷新凭证静默续期后重试一次。
+    try {
+      const refreshed = await refreshSession();
+      return await request<T>(path, options, refreshed.access_token);
+    } catch {
+      throw new ApiError("登录状态已过期，请重新登录。", 401);
+    }
+  }
 }
 
 export const jsonBody = (value: unknown): Pick<RequestInit, "method" | "body"> => ({

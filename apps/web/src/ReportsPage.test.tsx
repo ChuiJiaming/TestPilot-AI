@@ -43,7 +43,7 @@ function setupFetch(options: { reportStatus?: number; expiredArtifact?: boolean;
       return Response.json({ items: projectId === project.id ? [run] : [], next_cursor: null });
     }
     if (url.endsWith("/test-runs/run-1/report")) {
-      if (options.reportStatus) return Response.json({ detail: "Report access denied" }, { status: options.reportStatus });
+      if (options.reportStatus) return Response.json({ message: "Report access denied" }, { status: options.reportStatus });
       return Response.json({
         ...report,
         artifact_references: options.expiredArtifact
