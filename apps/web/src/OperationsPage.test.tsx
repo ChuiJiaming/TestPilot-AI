@@ -242,7 +242,7 @@ describe("OperationsPage", () => {
     render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
     fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
 
-    expect(await screen.findByText("模型调用已就绪")).toBeInTheDocument();
+    expect(await screen.findByText("调用已就绪")).toBeInTheDocument();
     expect(screen.getByText("数据库已批准设置", { exact: false })).toBeInTheDocument();
     expect(screen.getAllByText("planner-large").length).toBeGreaterThanOrEqual(2);
     fireEvent.click(screen.getByRole("button", { name: "测试连接" }));
@@ -260,7 +260,7 @@ describe("OperationsPage", () => {
     render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
     fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
 
-    expect(await screen.findByText("模型调用尚未就绪")).toBeInTheDocument();
+    expect(await screen.findByText("调用未就绪")).toBeInTheDocument();
     expect(screen.getByText("API_KEY_MISSING")).toBeInTheDocument();
   });
 
@@ -291,6 +291,33 @@ describe("OperationsPage", () => {
       },
     });
     expect(submitted?.body?.reason).toBe("切换到新的模型供应商");
+  });
+
+  it("fills connection fields from a vendor preset", async () => {
+    setupFetch({ platformAdmin: true });
+    render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑配置" }));
+    fireEvent.click(await screen.findByRole("button", { name: /DeepSeek/ }));
+
+    expect(screen.getByLabelText("接口地址")).toHaveValue("https://api.deepseek.com/v1");
+    expect(screen.getByLabelText("API Key 环境变量名")).toHaveValue("TESTPILOT_DEEPSEEK_API_KEY");
+    expect(screen.getByLabelText("场景生成模型")).toHaveValue("deepseek-chat");
+    expect(screen.getByLabelText("Run Agent 模型")).toHaveValue("deepseek-reasoner");
+  });
+
+  it("refuses to submit a pricing row whose rate was left blank", async () => {
+    const requests = setupFetch({ platformAdmin: true });
+    render(<OperationsPage organizations={[organization]} accessToken="access-token" currentUserId="admin-1" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "AI 模型" }));
+    fireEvent.click(await screen.findByRole("button", { name: "编辑配置" }));
+    // 预设只带模型名，不带价格：留空时必须拦下，否则会被 Number("") 静默当成 0。
+    fireEvent.click(await screen.findByRole("button", { name: /DeepSeek/ }));
+    fireEvent.change(screen.getByLabelText("变更理由"), { target: { value: "换供应商" } });
+    fireEvent.click(screen.getByRole("button", { name: "提交审批申请" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("单价不能为空");
+    expect(requests.some((request) => request.method === "PUT")).toBe(false);
   });
 
   it("shows a denied platform setting decision", async () => {

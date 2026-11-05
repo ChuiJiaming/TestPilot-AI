@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Activity, AlertTriangle, Bell, Check, Download, FileClock, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { Activity, Bell, Check, Download, FileClock, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
 import { api, ApiError, jsonBody, type Organization } from "./api";
 import { Button } from "./components/ui/button";
 import { Modal } from "./components/ui/modal";
 import { Card, CardTitle } from "./components/ui/card";
 import { Input } from "./components/ui/input";
 import { Label } from "./components/ui/label";
+import { identifyProvider, matchPreset, modelPresets, type ModelPreset } from "./modelPresets";
 
 type QuotaPolicy = {
   organization_id: string;
@@ -200,6 +201,17 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     () => settingChanges.filter((change) => change.key === "llm_config"),
     [settingChanges],
   );
+  // 摘要卡按接口地址反推供应商，编辑器按同一地址回显选中的预设。
+  const providerIdentity = useMemo(
+    () => identifyProvider(modelConfig?.base_url ?? ""),
+    [modelConfig?.base_url],
+  );
+  const activePreset = useMemo(() => matchPreset(modelDraft.base_url), [modelDraft.base_url]);
+  const candidateModels = useMemo(() => {
+    const names = new Set(activePreset?.models ?? []);
+    for (const row of modelDraft.pricing) if (row.model.trim()) names.add(row.model.trim());
+    return [...names];
+  }, [activePreset, modelDraft.pricing]);
   const activePreferences = useMemo(() => new Map(
     preferences.map((preference) => [`${preference.event_type}:${preference.channel}`, preference.enabled]),
   ), [preferences]);
@@ -530,6 +542,26 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     }));
   }
 
+  /** 套用供应商预设：填地址、凭据变量名和模型名，已填过的价格原样保留。 */
+  function applyPreset(preset: ModelPreset) {
+    setModelDraft((current) => {
+      if (!preset.baseUrl) return current;
+      const priced = new Map(current.pricing.map((row) => [row.model.trim(), row]));
+      const pricing = preset.models.map((model) => {
+        const existing = priced.get(model);
+        return { model, input: existing?.input ?? "", output: existing?.output ?? "" };
+      });
+      return {
+        ...current,
+        base_url: preset.baseUrl,
+        api_key_env: preset.apiKeyEnv,
+        planner_model: preset.models[0] ?? "",
+        run_agent_model: preset.models[1] ?? preset.models[0] ?? "",
+        pricing: pricing.length > 0 ? pricing : current.pricing,
+      };
+    });
+  }
+
   async function saveModelConfig(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setModelFormError("");
@@ -537,6 +569,11 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
     for (const row of modelDraft.pricing) {
       const model = row.model.trim();
       if (!model) continue;
+      // 空字符串会被 Number() 静默转成 0，等于把成本核算写成零，必须显式拦下。
+      if (!row.input.trim() || !row.output.trim()) {
+        setModelFormError(`模型 ${model} 的输入/输出单价不能为空，请按供应商官网当前定价填写。`);
+        return;
+      }
       const input = Number(row.input);
       const output = Number(row.output);
       if (!Number.isFinite(input) || input < 0 || !Number.isFinite(output) || output < 0) {
@@ -719,40 +756,41 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
 
     {tab === "models" && platformAccess === "allowed" && <section id="operations-panel-models" role="tabpanel" aria-labelledby="operations-tab-models" className="operations-panel">
       <div className="operations-section-heading"><div><h2>AI 模型</h2><p>平台调用大模型的接口地址、凭据来源与计费单价。API Key 只以环境变量名引用，不会写入数据库或审计日志。</p></div>
-        <div className="button-row"><Button variant="secondary" type="button" onClick={() => void loadModelConfig()} disabled={modelConfigLoading}><RefreshCw size={14} />刷新</Button><Button type="button" onClick={openModelForm} disabled={!modelConfig}>编辑配置</Button></div>
+        <div className="button-row"><Button variant="secondary" type="button" onClick={() => void loadModelConfig()} disabled={modelConfigLoading}><RefreshCw size={14} />刷新</Button></div>
       </div>
       {modelConfigError && <div className="alert alert-error" role="alert">{modelConfigError}</div>}
       {modelConfigNotice && <div className="alert alert-success" role="status">{modelConfigNotice}</div>}
       {modelConfigLoading && !modelConfig && <div className="operations-loading" role="status">正在读取模型配置…</div>}
       {modelConfig && <>
-        <Card className={`operations-card model-status ${modelConfig.ready ? "ready" : "blocked"}`}>
-          <div className="model-status-head">
-            <span className="model-status-icon" aria-hidden="true">{modelConfig.ready ? <Check size={18} /> : <AlertTriangle size={18} />}</span>
-            <div className="model-status-copy"><b>{modelConfig.ready ? "模型调用已就绪" : "模型调用尚未就绪"}</b><small>生效来源：{sourceLabels[modelConfig.source]}{modelConfig.updated_at ? ` · 更新于 ${formatDate(modelConfig.updated_at)}` : ""}</small></div>
-            <Button variant="secondary" type="button" onClick={() => void probeModelConfig()} disabled={modelProbeBusy}>{modelProbeBusy ? "正在测试…" : "测试连接"}</Button>
+        <Card className={`operations-card model-hero ${modelConfig.ready ? "ready" : "blocked"}`}>
+          <div className="model-hero-main">
+            <span className="model-logo" style={{ background: providerIdentity.accent }} aria-hidden="true">{providerIdentity.mark}</span>
+            <div className="model-hero-copy">
+              <div className="model-hero-title"><b>{providerIdentity.name}</b><span className={`model-state-pill ${modelConfig.ready ? "ok" : "bad"}`}>{modelConfig.ready ? "调用已就绪" : "调用未就绪"}</span></div>
+              <code className="model-hero-url">{modelConfig.base_url}</code>
+            </div>
+            <div className="model-hero-actions">
+              <Button variant="secondary" type="button" onClick={() => void probeModelConfig()} disabled={modelProbeBusy}>{modelProbeBusy ? "正在测试…" : "测试连接"}</Button>
+              <Button type="button" onClick={openModelForm}>编辑配置</Button>
+            </div>
+          </div>
+          <div className="model-facts">
+            <div className="model-fact"><span>凭据变量</span><b><code>{modelConfig.api_key_env}</code><span className={`model-badge ${modelConfig.api_key_configured ? "ok" : "bad"}`}>{modelConfig.api_key_configured ? "已注入" : "未注入"}</span></b></div>
+            <div className="model-fact"><span>场景生成模型</span><b>{modelConfig.planner_model || "未配置"}</b></div>
+            <div className="model-fact"><span>Run Agent 模型</span><b>{modelConfig.run_agent_model || "未配置"}</b></div>
+            <div className="model-fact"><span>生效来源</span><b>{sourceLabels[modelConfig.source]}{modelConfig.updated_at ? <small>{formatDate(modelConfig.updated_at)}</small> : null}</b></div>
           </div>
           {modelConfig.issues.length > 0 && <ul className="model-issues">{modelConfig.issues.map((issue) => <li key={issue.code}><code>{issue.code}</code>{issue.message}</li>)}</ul>}
           {modelProbe && <div className={`model-probe ${modelProbe.ok ? "ok" : "bad"}`} role="status">{modelProbe.ok ? `连接成功 · ${modelProbe.model} · ${modelProbe.latency_ms}ms` : `连接失败 · ${modelProbe.error_code} ${modelProbe.message}`}</div>}
         </Card>
-        <div className="operations-two-column">
-          <Card className="operations-card">
-            <div className="operations-card-heading"><div><CardTitle>连接与模型</CardTitle><p>worker 每次调用前都会重新读取这份生效配置。</p></div></div>
-            <dl className="model-config-fields">
-              <div><dt>接口地址</dt><dd><code>{modelConfig.base_url}</code></dd></div>
-              <div><dt>API Key 环境变量</dt><dd><code>{modelConfig.api_key_env}</code><span className={`model-badge ${modelConfig.api_key_configured ? "ok" : "bad"}`}>{modelConfig.api_key_configured ? "已注入" : "未注入"}</span></dd></div>
-              <div><dt>场景生成模型</dt><dd>{modelConfig.planner_model || "未配置"}</dd></div>
-              <div><dt>Run Agent 模型</dt><dd>{modelConfig.run_agent_model || "未配置"}</dd></div>
-            </dl>
-          </Card>
-          <Card className="operations-card">
-            <div className="operations-card-heading"><div><CardTitle>模型定价</CardTitle><p>按每百万 token 计价，用于成本核算与额度结算。</p></div><span className="operations-count">{modelConfig.pricing.length}</span></div>
-            {modelConfig.pricing.length === 0 ? <p className="operations-empty-inline">尚未配置模型定价。</p> : <div className="operations-audit-table model-pricing-table" role="table" aria-label="模型定价">
-              <div className="operations-audit-head" role="row"><span role="columnheader">模型</span><span role="columnheader">输入 / 百万 token</span><span role="columnheader">输出 / 百万 token</span></div>
-              {modelConfig.pricing.map((row) => <div className="operations-audit-row" role="row" key={row.model}><span role="cell"><b>{row.model}</b></span><span role="cell">${row.input_usd_per_million}</span><span role="cell">${row.output_usd_per_million}</span></div>)}
-            </div>}
-          </Card>
-        </div>
-        {modelChanges.length > 0 && <Card className="operations-card">
+        <Card className="operations-card">
+          <div className="operations-card-heading"><div><CardTitle>模型定价</CardTitle><p>按每百万 token 计价，用于成本核算与额度结算。</p></div><span className="operations-count">{modelConfig.pricing.length}</span></div>
+          {modelConfig.pricing.length === 0 ? <p className="operations-empty-inline">尚未配置模型定价。</p> : <div className="operations-audit-table model-pricing-table" role="table" aria-label="模型定价">
+            <div className="operations-audit-head" role="row"><span role="columnheader">模型</span><span role="columnheader">输入 / 百万 token</span><span role="columnheader">输出 / 百万 token</span></div>
+            {modelConfig.pricing.map((row) => <div className="operations-audit-row" role="row" key={row.model}><span role="cell"><b>{row.model}</b></span><span role="cell">${row.input_usd_per_million}</span><span role="cell">${row.output_usd_per_million}</span></div>)}
+          </div>}
+        </Card>
+                {modelChanges.length > 0 && <Card className="operations-card">
           <div className="operations-card-heading"><div><CardTitle>模型配置变更</CardTitle><p>配置在另一位平台管理员批准后才会被 worker 采用。</p></div><span className="operations-count">{modelChanges.length}</span></div>
           <div className="operations-change-list">{modelChanges.map((change) => <article className="operations-change-card" key={change.id}>
             <div className="operations-change-title"><div><b>llm_config</b><span className={`operations-change-status ${change.status.toLowerCase()}`}>{change.status}</span></div><small>{formatDate(change.created_at)}</small></div>
@@ -764,16 +802,35 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           </article>)}</div>
         </Card>}
       </>}
-      {showModelForm && <Modal title="编辑 AI 模型配置" description="保存后会生成一条待审批变更；API Key 请通过环境变量注入，此处只填写变量名。" wide onClose={() => setShowModelForm(false)}>
+      {showModelForm && <Modal title="编辑 AI 模型配置" description="选择供应商预设会自动填好接口地址与模型名；保存后需另一位平台管理员审批。" wide onClose={() => setShowModelForm(false)}>
         <form className="form-stack" onSubmit={(event) => void saveModelConfig(event)}>
           {modelFormError && <div className="alert alert-error" role="alert">{modelFormError}</div>}
-          <div><Label htmlFor="model-base-url">接口地址</Label><Input id="model-base-url" value={modelDraft.base_url} onChange={(event) => setModelDraft((current) => ({ ...current, base_url: event.target.value }))} placeholder="https://api.openai.com/v1" required maxLength={2048} /></div>
-          <div><Label htmlFor="model-api-key-env">API Key 环境变量名</Label><Input id="model-api-key-env" value={modelDraft.api_key_env} onChange={(event) => setModelDraft((current) => ({ ...current, api_key_env: event.target.value }))} placeholder="TESTPILOT_LLM_API_KEY" required maxLength={64} /></div>
-          <div className="model-form-pair">
-            <div><Label htmlFor="model-planner">场景生成模型</Label><Input id="model-planner" value={modelDraft.planner_model} onChange={(event) => setModelDraft((current) => ({ ...current, planner_model: event.target.value }))} placeholder="gpt-4o-mini" required maxLength={120} /></div>
-            <div><Label htmlFor="model-run-agent">Run Agent 模型</Label><Input id="model-run-agent" value={modelDraft.run_agent_model} onChange={(event) => setModelDraft((current) => ({ ...current, run_agent_model: event.target.value }))} placeholder="gpt-4o-mini" required maxLength={120} /></div>
+          <div className="model-picker">
+            <div className="model-picker-head"><b>供应商预设</b><small>点选即填入接口地址、凭据变量名与模型名，单价请按官网当前定价填写</small></div>
+            <div className="model-preset-grid">
+              {modelPresets.map((preset) => <button key={preset.id} type="button" aria-pressed={activePreset?.id === preset.id} className={`model-preset${activePreset?.id === preset.id ? " active" : ""}`} onClick={() => applyPreset(preset)}>
+                <span className="model-preset-logo" style={{ background: preset.accent }} aria-hidden="true">{preset.mark}</span>
+                <span className="model-preset-copy"><b>{preset.name}</b><small>{preset.hint}</small></span>
+              </button>)}
+            </div>
           </div>
-          <fieldset className="model-pricing-editor">
+          <fieldset className="model-form-section">
+            <legend>连接</legend>
+            <div className="model-form-pair">
+              <div><Label htmlFor="model-base-url">接口地址</Label><Input id="model-base-url" value={modelDraft.base_url} onChange={(event) => setModelDraft((current) => ({ ...current, base_url: event.target.value }))} placeholder="https://api.openai.com/v1" required maxLength={2048} /></div>
+              <div><Label htmlFor="model-api-key-env">API Key 环境变量名</Label><Input id="model-api-key-env" value={modelDraft.api_key_env} onChange={(event) => setModelDraft((current) => ({ ...current, api_key_env: event.target.value }))} placeholder="TESTPILOT_LLM_API_KEY" required maxLength={64} /><small className="model-field-note">只填变量名，Key 本身不会进数据库或审计日志。</small></div>
+            </div>
+          </fieldset>
+          <fieldset className="model-form-section">
+            <legend>模型</legend>
+            <div className="model-form-pair">
+              <div><Label htmlFor="model-planner">场景生成模型</Label><Input id="model-planner" list="model-candidates" value={modelDraft.planner_model} onChange={(event) => setModelDraft((current) => ({ ...current, planner_model: event.target.value }))} placeholder="glm-4-flash" required maxLength={120} /></div>
+              <div><Label htmlFor="model-run-agent">Run Agent 模型</Label><Input id="model-run-agent" list="model-candidates" value={modelDraft.run_agent_model} onChange={(event) => setModelDraft((current) => ({ ...current, run_agent_model: event.target.value }))} placeholder="glm-4.6" required maxLength={120} /></div>
+            </div>
+            <datalist id="model-candidates">{candidateModels.map((model) => <option key={model} value={model} />)}</datalist>
+            <small className="model-field-note">场景生成负责把需求拆成测试步骤；Run Agent 决定浏览器里每一步怎么操作，两者可以相同。</small>
+          </fieldset>
+          <fieldset className="model-pricing-editor model-form-section">
             <legend>模型定价（美元 / 百万 token）</legend>
             {modelDraft.pricing.map((row, index) => <div className="model-pricing-row" key={`pricing-${index}`}>
               <Input aria-label={`定价模型 ${index + 1}`} value={row.model} onChange={(event) => updatePricingRow(index, { model: event.target.value })} placeholder="模型名称" maxLength={120} />
@@ -787,6 +844,7 @@ export function OperationsPage({ organizations, accessToken, currentUserId }: {
           <Button type="submit" disabled={modelBusy}>{modelBusy ? "正在提交…" : "提交审批申请"}</Button>
         </form>
       </Modal>}
+
     </section>}
 
     {tab === "settings" && platformAccess === "allowed" && <section id="operations-panel-settings" role="tabpanel" aria-labelledby="operations-tab-settings" className="operations-panel">

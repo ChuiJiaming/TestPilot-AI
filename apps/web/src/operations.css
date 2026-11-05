@@ -181,3 +181,55 @@
   .model-form-pair, .model-pricing-row { grid-template-columns: 1fr; }
   .model-pricing-remove { width: 100%; }
 }
+
+/* 供应商摘要卡：左侧品牌块 + 右侧四个事实，视觉参考 CC Switch 的供应商卡 */
+.model-hero { display: grid; gap: 14px; }
+.model-hero.ready { border-color: #d9efe3; background: linear-gradient(180deg, #f8fdfa, #fff); }
+.model-hero.blocked { border-color: #f3e3c4; background: linear-gradient(180deg, #fffdf7, #fff); }
+.model-hero-main { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; }
+.model-logo { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border-radius: 13px; color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; box-shadow: 0 6px 14px rgba(43, 58, 92, .16); }
+.model-hero-copy { display: grid; flex: 1; gap: 5px; min-width: 180px; }
+.model-hero-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.model-hero-title b { color: #2f3b52; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
+.model-hero-url { color: #7c8698; font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+.model-state-pill { padding: 2px 8px; border-radius: 99px; font-size: 9px; font-weight: 600; }
+.model-state-pill.ok { background: #e7f7ee; color: #2a7d52; }
+.model-state-pill.bad { background: #fdf1da; color: #96650f; }
+.model-hero-actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.model-hero-actions .button { height: 32px; padding: 0 13px; font-size: 11px; }
+.model-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding-top: 13px; border-top: 1px solid #eef1f6; }
+.model-fact { display: grid; gap: 5px; min-width: 0; }
+.model-fact > span { color: #98a2b3; font-size: 9px; }
+.model-fact > b { display: flex; align-items: center; gap: 6px; min-width: 0; color: #3f4c64; font-size: 11.5px; font-weight: 600; overflow-wrap: anywhere; }
+.model-fact > b small { color: #a3adbd; font-size: 9px; font-weight: 400; }
+.model-fact code { padding: 2px 6px; border-radius: 5px; background: #f4f6fa; color: #6b76a4; font: 9.5px ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+/* 编辑器里的供应商预设宫格 */
+.model-picker { display: grid; gap: 9px; }
+.model-picker-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.model-picker-head b { color: #3f4c64; font-size: 11px; }
+.model-picker-head small { color: #98a2b3; font-size: 9.5px; }
+.model-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.model-preset { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid #e6eaf1; border-radius: 10px; background: #fff; text-align: left; transition: border-color .12s, box-shadow .12s, background .12s; }
+.model-preset:hover { border-color: #c9d2e6; background: #fbfcfe; }
+.model-preset.active { border-color: #8b9bf0; background: #f5f6ff; box-shadow: 0 0 0 3px rgba(86, 104, 216, .1); }
+.model-preset-logo { display: grid; width: 28px; height: 28px; flex: 0 0 28px; place-items: center; border-radius: 8px; color: #fff; font-size: 9px; font-weight: 700; }
+.model-preset-copy { display: grid; gap: 2px; min-width: 0; }
+.model-preset-copy b { color: #3f4c64; font-size: 11px; font-weight: 600; }
+.model-preset-copy small { color: #98a2b3; font-size: 8.5px; line-height: 1.4; }
+
+/* 编辑器分区 */
+.model-form-section { display: grid; gap: 10px; margin: 0; padding: 12px 13px; border: 1px solid #eef1f6; border-radius: 11px; background: #fcfdff; }
+.model-form-section > legend { padding: 0 6px; margin-left: -4px; color: #6d7a90; font-size: 10.5px; font-weight: 600; }
+.model-form-section.model-pricing-editor { background: #fcfdff; }
+.model-field-note { display: block; margin-top: 5px; color: #a0a9b8; font-size: 9px; line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .model-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .model-preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 680px) {
+  .model-facts, .model-preset-grid { grid-template-columns: 1fr; }
+  .model-hero-actions { width: 100%; }
+  .model-hero-actions .button { flex: 1; }
+}
