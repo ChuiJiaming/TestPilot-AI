@@ -6,6 +6,7 @@
 }
 .run-create-card, .run-list-card, .run-detail-card, .run-steps-card, .run-events-card {
   min-width: 0;
+  padding: 17px 19px;
 }
 .run-card-heading, .run-detail-heading {
   display: flex;
