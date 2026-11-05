@@ -1,0 +1,13 @@
+# Shell scripts and SQL must keep LF: they are executed inside Linux containers
+# and by PostgreSQL, where a CRLF line ending turns into "bad interpreter" or a
+# syntax error that only shows up in production.
+*.sh    text eol=lf
+*.sql   text eol=lf
+*.py    text eol=lf
+*.mjs   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+*.png   binary
+*.jpg   binary
+*.ico   binary
