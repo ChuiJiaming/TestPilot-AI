@@ -39,11 +39,15 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
+      # The same database backs both the migration step and the integration
+      # tests. Without migrations, the PostgreSQL integration tests skip locally
+      # but fail loudly here (the table they need does not exist).
+      TESTPILOT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/testpilot
       TESTPILOT_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/testpilot
       TESTPILOT_TEST_REDIS_URL: redis://127.0.0.1:6379/0
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -52,8 +56,23 @@ jobs:
           python -m pip install --upgrade pip
           # constraints.txt is the reproducible build; pyproject ranges are not.
           python -m pip install -e "apps/api[test]" -c apps/api/constraints.txt
+      - name: Build the schema before the integration tests
+        run: python -m apps.api.scripts.migrate --apply
       - name: Run test suite
-        run: python -m pytest tests -q -rs
+        run: |
+          set -o pipefail
+          python -m pytest tests -q -rs --tb=short 2>&1 | tee /tmp/pytest.log
+      - name: Publish failure tail
+        if: always()
+        run: |
+          if [ -f /tmp/pytest.log ]; then
+            {
+              echo '### pytest tail'
+              echo '```'
+              tail -n 120 /tmp/pytest.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   migrations:
     name: Migration chain on a clean database
@@ -75,8 +94,8 @@ jobs:
     env:
       TESTPILOT_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/testpilot_mig
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -96,8 +115,8 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
