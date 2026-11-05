@@ -1,9 +1,44 @@
-# Current Validation Status (authoritative as of 2026-11-04)
+# Current Validation Status (authoritative as of 2026-11-05)
 
 > 这是项目当前**唯一权威**的验证数字快照。此前分散在
 > `phase-1-4-unified-validation.md`、`TestPilot_AI_V10.3_验证记录.txt`、
 > `phase-2-deferred-validation.md` 里的数字是 **10-30 的历史快照**，保留原样
 > 作为审计证据，不再更新。数字以后续此文档为准。
+
+## 2026-11-05 实测（生产就绪度整改后）
+
+| 检查项 | 结果 | 说明 |
+|---|---|---|
+| 后端全量测试 | **348 passed / 4 skipped / 0 failed**（207s） | 本机默认环境（无 live Redis/SMTP） |
+| 新增测试 | +24 例 | 可观测性 8、密码重置 8、SecretRef 8 |
+| 前端 typecheck | 通过 | `tsc -b` |
+| 前端 ESLint | 通过 | `eslint .` |
+| 前端 Vitest | 24–34 passed / 6–7 文件，**结果不稳定** | 同一环境多次运行出现 24/29/34 三种结果，并伴随一次沙箱 `EPERM` 临时文件错误；测试依赖真实计时器，属已知 flaky，待改为假时钟 |
+| 依赖锁定 | `apps/api/constraints.txt`（95 包） | 本轮测试即在该锁定集合下通过 |
+
+### 本轮修掉的缺陷
+
+| 缺陷 | 根因 | 修复 |
+|---|---|---|
+| `test_m14_routes` 基线 operationId 断言永久失败 | FastAPI 0.162 将 `include_router` 结果改为惰性 `_IncludedRouter`，`app.routes` 不再展开子路由（接口本身正常，`/openapi.json` 仍暴露 140 个操作） | 测试改用 `app.openapi()` 反射；同时锁定依赖版本 |
+| 迁移测试写死「共 18 个、018 是最后一个」 | 断言与迁移数量耦合 | 改为校验顺序、连续性与关键文件存在 |
+| 密码重置不存在 | 功能缺失 | 新增迁移 019 + 服务 + 两个端点 + 邮件模板 |
+| SecretRef 生产不可用 | 只有 `UnavailableSecretRefResolver` | 新增 env/挂载文件后端 + 数据库解析器（租户范围入查询） |
+| 无请求追踪、无指标、无结构化日志 | 未实现 | `core/observability.py` + `/metrics` + `/health/live` |
+
+### 仍未验证（不得视为通过）
+
+- CI 工作流**尚未在 GitHub 上真实执行过**。
+- **迁移 019 尚未应用**到任何 PostgreSQL 实例（含本地）。
+- 备份/恢复脚本**尚未在真实主机执行**。
+- 前端测试 flaky 未消除。
+- 邀请邮件仍未接入投递管道。
+- 真实 LLM 生成链路仍未验证。
+- 生产部署（PM2 / Nginx / 出口 ACL）仍未在真机验证。
+
+---
+
+## 历史快照（2026-11-03 / 11-04，保留作审计证据）
 
 ## 最新实测结果（2026-11-03，Phase C-lite 之后）
 

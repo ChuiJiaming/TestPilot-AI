@@ -5,7 +5,7 @@
 **面向企业 Web 应用的 AI 辅助自动化测试平台**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.162-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?style=flat-square&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -104,8 +104,8 @@ Outbox + 租约 + Reconciler：投递与业务事务同源，杜绝「事务提�
 | 框架 | 说明 | 版本 |
 | --- | --- | --- |
 | [Python](https://www.python.org/) | 运行时 | 3.11+ |
-| [FastAPI](https://fastapi.tiangolo.com/) | Web 框架 | 0.115.0 |
-| [SQLAlchemy](https://www.sqlalchemy.org/) | ORM | 2.0.35 |
+| [FastAPI](https://fastapi.tiangolo.com/) | Web 框架 | 0.162.0（`apps/api/constraints.txt` 锁定） |
+| [SQLAlchemy](https://www.sqlalchemy.org/) | ORM | 2.1.6（`apps/api/constraints.txt` 锁定） |
 | [Pydantic](https://docs.pydantic.dev/) | 数据校验 | 2.9.2 |
 | [Celery](https://docs.celeryq.dev/) | 异步任务队列 | 5.6.3 |
 | [LangGraph](https://langchain-ai.github.io/langgraph/) | 有界 Agent 编排 | 1.2.18 |
@@ -146,7 +146,7 @@ Outbox + 租约 + Reconciler：投递与业务事务同源，杜绝「事务提�
 
 | 功能 | 描述 |
 | --- | --- |
-| 账号体系 | 注册、邮件验证、登录、刷新、登出、会话管理；刷新令牌重放检测（重放即撤销整个令牌族） |
+| 账号体系 | 注册、邮件验证、登录、刷新、登出、会话管理、密码找回；刷新令牌重放检测（重放即撤销整个令牌族），重置密码一次性吊销全部会话 |
 | 组织与项目 | 组织、项目、成员三级 RBAC；邀请 → 接受 → 权限生效；成员移除即时失效访问权 |
 | 测试环境 | 环境 CRUD、不可变环境快照、SecretRef 密钥元数据（密钥值永不出现在响应里）、经 mTLS 网关的健康检查 |
 
@@ -191,8 +191,8 @@ Outbox + 租约 + Reconciler：投递与业务事务同源，杜绝「事务提�
 ### 启动 API
 
 ```bash
-# 仓库根目录
-python -m pip install -e "apps/api[test]"
+# 仓库根目录 —— 用锁定版本安装，避免依赖漂移
+python -m pip install -e "apps/api[test]" -c apps/api/constraints.txt
 python -m uvicorn apps.api.app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -222,6 +222,23 @@ Sureshot/
 ├── deploy/                  PM2 / Nginx / ACL / 部署说明
 └── docs/images/             架构图与功能截图
 ```
+
+---
+
+## 🩺 运维与可观测性
+
+| 能力 | 入口 | 说明 |
+| --- | --- | --- |
+| 存活探针 | `GET /api/v1/health/live` | 不探测任何外部依赖，避免依赖抖动引发重启风暴 |
+| 就绪探针 | `GET /api/v1/health/ready` | PostgreSQL / Redis / 对象存储三项全 ready 才返回 200 |
+| 指标 | `GET /metrics` | Prometheus 文本格式；设置 `TESTPILOT_METRICS_TOKEN` 后需 Bearer |
+| 请求追踪 | `X-Request-ID` | 错误响应 `trace_id` 与日志 `request_id` 一致，可直接捞全链路 |
+| 结构化日志 | stdout JSON | 不记录查询串与请求体，避免票据/链接泄漏进日志 |
+
+- 运维手册：[`docs/RUNBOOK.md`](docs/RUNBOOK.md) —— 巡检、故障处置、备份恢复、密钥轮换、扩容
+- 备份与恢复：`deploy/scripts/backup-postgres.sh` · `verify-backup.sh` · `restore-postgres.sh`
+- 环境变量参考：[`deploy/.env.example`](deploy/.env.example)
+- 依赖锁定：[`apps/api/constraints.txt`](apps/api/constraints.txt)（`pip install -c` 使用）
 
 ---
 
